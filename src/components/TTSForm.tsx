@@ -4,14 +4,14 @@ import { useState } from 'react';
 import VoiceModal from '@/components/VoiceModal';
 import CustomDropdown from '@/components/CustomDropdown';
 import { VoiceOption } from '@/types/tts';
-import { ArrowRight, Settings2, Loader2, Play } from 'lucide-react';
-import { HistoryItem } from '@/components/HistoryList';
+import { ArrowRight, Settings2, Loader2, Play, Sparkles } from 'lucide-react';
+import HistoryList from '@/components/HistoryList';
 
 export default function TTSForm() {
   const [text, setText] = useState('');
   const [voiceShortName, setVoiceShortName] = useState('en-US-AriaNeural');
   const [voiceNameDisplay, setVoiceNameDisplay] = useState('Aria Multilingual');
-  const [voiceDetails, setVoiceDetails] = useState('English (US) • Female');
+  const [voiceDetails, setVoiceDetails] = useState('English - United States - Female');
   
   const [emotion, setEmotion] = useState('neutral');
   const [speed, setSpeed] = useState(1.0);
@@ -28,11 +28,9 @@ export default function TTSForm() {
     
     setLoading(true);
 
-    // Convert speed (0.5 to 2.0) to edge-tts rate format (e.g., +20%, -10%)
     const ratePercent = Math.round((speed - 1) * 100);
     const rateStr = ratePercent >= 0 ? `+${ratePercent}%` : `${ratePercent}%`;
 
-    // Convert pitch (-50 to +50) to edge-tts format
     const pitchStr = pitch >= 0 ? `+${pitch}Hz` : `${pitch}Hz`;
 
     const payload = { 
@@ -54,10 +52,9 @@ export default function TTSForm() {
       const data = await res.json();
 
       if (data.success && data.audioUrl) {
-        // Save to History
         const newHistoryItem = {
           id: Date.now().toString(),
-          title: `Generated Audio (${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})`,
+          title: `Generated Audio`,
           text: text,
           voiceName: voiceNameDisplay,
           audioUrl: data.audioUrl,
@@ -67,10 +64,8 @@ export default function TTSForm() {
         const historyList = saved ? JSON.parse(saved) : [];
         localStorage.setItem('tts_history', JSON.stringify([newHistoryItem, ...historyList]));
 
-        // Switch to history tab after generation
         setActiveRightTab('history');
 
-        // Play audio immediately
         const audio = new Audio(data.audioUrl);
         audio.play();
       } else {
@@ -97,49 +92,47 @@ export default function TTSForm() {
 
   return (
     <>
-      <form onSubmit={handleSubmit} className="flex flex-col lg:flex-row gap-8 w-full max-w-6xl mx-auto">
+      <form onSubmit={handleSubmit} className="flex flex-col lg:flex-row w-full h-full min-h-[calc(100vh-64px)]">
         
-        {/* LEFT PANEL: Script Input (66%) */}
-        <div className="lg:w-2/3 flex flex-col">
-          <div className="relative flex-grow flex flex-col bg-white border border-gray-200 rounded-2xl shadow-sm p-2">
-            <div className="flex justify-end px-4 pt-3 pb-1">
-              <span className="text-xs text-gray-400 font-medium tracking-wide">
-                {text.length} characters
-              </span>
-            </div>
-            <textarea
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Start typing your script here..."
-              className="w-full flex-grow p-4 text-gray-800 text-lg resize-none placeholder-gray-300 focus:outline-none min-h-[400px]"
-              required
-            />
-          </div>
+        {/* LEFT PANEL: Script Input */}
+        <div className="lg:w-[65%] flex flex-col p-6 lg:p-12 lg:pr-16 border-r border-gray-100 dark:border-gray-800">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Write or paste your script..."
+            className="w-full flex-grow text-gray-800 dark:text-gray-100 text-xl lg:text-2xl resize-none placeholder-gray-400 dark:placeholder-gray-600 bg-transparent focus:outline-none min-h-[400px] leading-relaxed"
+            required
+          />
 
-          <button
-            type="submit"
-            disabled={loading || !text.trim()}
-            className="mt-6 w-full flex items-center justify-center gap-2 bg-gray-900 hover:bg-black disabled:bg-gray-400 text-white font-semibold text-lg py-4 rounded-xl transition-colors shadow-sm"
-          >
-            {loading ? (
-              <><Loader2 className="w-5 h-5 animate-spin" /> Synthesizing...</>
-            ) : (
-              'Generate Audio'
-            )}
-          </button>
+          <div className="flex justify-between items-center mt-6 pt-4">
+            <div className="flex items-center gap-2">
+               <span className="text-sm font-medium text-gray-400 dark:text-gray-500">{text.length} / 20,000</span>
+            </div>
+            <button
+              type="submit"
+              disabled={loading || !text.trim()}
+              className="flex items-center justify-center gap-2 bg-black dark:bg-white disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white dark:text-black font-semibold px-6 py-3 rounded-xl transition-all shadow-sm hover:scale-105 active:scale-95"
+            >
+              {loading ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
+              ) : (
+                <><Sparkles className="w-4 h-4" /> Generate</>
+              )}
+            </button>
+          </div>
         </div>
 
-        {/* RIGHT PANEL: Tabs & Content (33%) */}
-        <div className="lg:w-1/3 flex flex-col gap-6">
+        {/* RIGHT PANEL: Settings & History */}
+        <div className="lg:w-[35%] flex flex-col p-6 lg:p-8 lg:pl-10 h-full overflow-y-auto">
           
-          <div className="flex border-b border-gray-200">
+          <div className="flex border-b border-gray-200 dark:border-gray-800 mb-8">
             <button
               type="button"
               onClick={() => setActiveRightTab('settings')}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${
                 activeRightTab === 'settings' 
-                  ? 'border-gray-900 text-gray-900' 
-                  : 'border-transparent text-gray-500 hover:text-gray-900'
+                  ? 'border-gray-900 dark:border-gray-100 text-gray-900 dark:text-gray-100' 
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
               }`}
             >
               Settings
@@ -147,10 +140,10 @@ export default function TTSForm() {
             <button
               type="button"
               onClick={() => setActiveRightTab('history')}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${
                 activeRightTab === 'history' 
-                  ? 'border-gray-900 text-gray-900' 
-                  : 'border-transparent text-gray-500 hover:text-gray-900'
+                  ? 'border-gray-900 dark:border-gray-100 text-gray-900 dark:text-gray-100' 
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
               }`}
             >
               History
@@ -158,39 +151,39 @@ export default function TTSForm() {
           </div>
 
           {activeRightTab === 'settings' ? (
-            <>
-              {/* Voice Selector Card */}
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-                  <Settings2 className="w-4 h-4 text-gray-400" />
-                  Voice Model
-                </label>
+            <div className="flex flex-col gap-8">
+              {/* Voice Selector */}
+              <div className="flex flex-col gap-3">
+                <div className="flex justify-between items-center">
+                  <label className="text-sm font-bold text-gray-900 dark:text-gray-100">Voice</label>
+                  <span className="text-xs font-semibold text-orange-500 flex items-center gap-1 cursor-pointer"><Sparkles className="w-3 h-3"/> Try Premium</span>
+                </div>
                 <button
                   type="button"
                   onClick={() => setIsVoiceModalOpen(true)}
-                  className="group flex items-center justify-between bg-white border border-gray-200 hover:border-gray-300 rounded-xl p-4 shadow-sm transition-all text-left"
+                  className="group flex items-center justify-between bg-white dark:bg-[#111] border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 rounded-xl p-4 shadow-sm transition-all text-left"
                 >
                   <div className="flex flex-col overflow-hidden">
-                    <span className="font-bold text-gray-900 text-base truncate">{voiceNameDisplay}</span>
-                    <span className="text-sm text-gray-500 mt-0.5">{voiceDetails}</span>
+                    <span className="font-bold text-gray-900 dark:text-gray-100 text-base truncate">{voiceNameDisplay}</span>
+                    <span className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{voiceDetails}</span>
                   </div>
-                  <div className="w-8 h-8 rounded-full bg-gray-50 group-hover:bg-gray-100 flex items-center justify-center transition-colors">
-                    <ArrowRight className="w-4 h-4 text-gray-600" />
+                  <div className="w-6 h-6 flex items-center justify-center">
+                    <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-gray-700 dark:group-hover:text-gray-200 transition-colors" />
                   </div>
                 </button>
               </div>
 
-              {/* Emotion Dropdown */}
-              <div className="flex flex-col gap-2">
-                <label className="text-sm font-semibold text-gray-900">Emotion Style</label>
+              {/* Emotion */}
+              <div className="flex flex-col gap-3">
+                <label className="text-sm font-bold text-gray-900 dark:text-gray-100">Emotion</label>
                 <CustomDropdown value={emotion} onChange={setEmotion} />
               </div>
 
-              {/* Speed Slider */}
-              <div className="flex flex-col gap-2 mt-2">
+              {/* Speed */}
+              <div className="flex flex-col gap-3 mt-2">
                 <div className="flex justify-between items-center">
-                  <label className="text-sm font-semibold text-gray-900">Speed</label>
-                  <span className="text-xs font-mono bg-gray-100 text-gray-700 px-2 py-1 rounded">{speed.toFixed(1)}x</span>
+                  <label className="text-sm font-bold text-gray-900 dark:text-gray-100">Speed</label>
+                  <span className="text-xs font-mono text-gray-500 dark:text-gray-400">{speed.toFixed(1)}x</span>
                 </div>
                 <input
                   type="range"
@@ -199,15 +192,15 @@ export default function TTSForm() {
                   step="0.1"
                   value={speed}
                   onChange={(e) => setSpeed(parseFloat(e.target.value))}
-                  className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-900"
+                  className="w-full h-1.5 bg-gray-200 dark:bg-gray-800 rounded-lg appearance-none cursor-pointer accent-black dark:accent-white"
                 />
               </div>
 
-              {/* Pitch Slider */}
-              <div className="flex flex-col gap-2 mt-2">
+              {/* Pitch */}
+              <div className="flex flex-col gap-3 mt-4">
                 <div className="flex justify-between items-center">
-                  <label className="text-sm font-semibold text-gray-900">Pitch</label>
-                  <span className="text-xs font-mono bg-gray-100 text-gray-700 px-2 py-1 rounded">{pitch > 0 ? `+${pitch}` : pitch}</span>
+                  <label className="text-sm font-bold text-gray-900 dark:text-gray-100">Pitch</label>
+                  <span className="text-xs font-mono text-gray-500 dark:text-gray-400">{pitch > 0 ? `+${pitch}` : pitch}</span>
                 </div>
                 <input
                   type="range"
@@ -216,12 +209,12 @@ export default function TTSForm() {
                   step="1"
                   value={pitch}
                   onChange={(e) => setPitch(parseInt(e.target.value))}
-                  className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-900"
+                  className="w-full h-1.5 bg-gray-200 dark:bg-gray-800 rounded-lg appearance-none cursor-pointer accent-black dark:accent-white"
                 />
               </div>
-            </>
+            </div>
           ) : (
-            <div className="flex-1 bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+            <div className="flex-1">
               <HistoryList />
             </div>
           )}
