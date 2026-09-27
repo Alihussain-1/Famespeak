@@ -20,6 +20,8 @@ export default function TTSForm() {
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  const [activeRightTab, setActiveRightTab] = useState<'settings' | 'history'>('settings');
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim()) return;
@@ -39,7 +41,7 @@ export default function TTSForm() {
       rate: rateStr, 
       pitch: pitchStr,
       volume: '+0%',
-      style: emotion // Added emotion to payload (handled by API if possible)
+      style: emotion
     };
 
     try {
@@ -53,8 +55,9 @@ export default function TTSForm() {
 
       if (data.success && data.audioUrl) {
         // Save to History
-        const newHistoryItem: HistoryItem = {
+        const newHistoryItem = {
           id: Date.now().toString(),
+          title: `Generated Audio (${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})`,
           text: text,
           voiceName: voiceNameDisplay,
           audioUrl: data.audioUrl,
@@ -63,6 +66,9 @@ export default function TTSForm() {
         const saved = localStorage.getItem('tts_history');
         const historyList = saved ? JSON.parse(saved) : [];
         localStorage.setItem('tts_history', JSON.stringify([newHistoryItem, ...historyList]));
+
+        // Switch to history tab after generation
+        setActiveRightTab('history');
 
         // Play audio immediately
         const audio = new Audio(data.audioUrl);
@@ -79,8 +85,13 @@ export default function TTSForm() {
 
   const handleVoiceSelect = (shortName: string, info: VoiceOption) => {
     setVoiceShortName(shortName);
-    setVoiceNameDisplay(info.label.split('-')[0]);
-    setVoiceDetails(`${info.locale} • ${info.gender}`);
+    setVoiceNameDisplay(info.label);
+    
+    const parts = (info.localeName || '').split('(');
+    const lang = parts[0]?.trim() || 'Unknown';
+    const country = parts[1]?.replace(')', '')?.trim() || 'Unknown';
+    setVoiceDetails(`${lang} - ${country} - ${info.gender}`);
+    
     setIsVoiceModalOpen(false);
   };
 
@@ -118,70 +129,102 @@ export default function TTSForm() {
           </button>
         </div>
 
-        {/* RIGHT PANEL: Settings (33%) */}
+        {/* RIGHT PANEL: Tabs & Content (33%) */}
         <div className="lg:w-1/3 flex flex-col gap-6">
           
-          {/* Voice Selector Card */}
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-              <Settings2 className="w-4 h-4 text-gray-400" />
-              Voice Model
-            </label>
+          <div className="flex border-b border-gray-200">
             <button
               type="button"
-              onClick={() => setIsVoiceModalOpen(true)}
-              className="group flex items-center justify-between bg-white border border-gray-200 hover:border-gray-300 rounded-xl p-4 shadow-sm transition-all text-left"
+              onClick={() => setActiveRightTab('settings')}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeRightTab === 'settings' 
+                  ? 'border-gray-900 text-gray-900' 
+                  : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
             >
-              <div className="flex flex-col overflow-hidden">
-                <span className="font-bold text-gray-900 text-base truncate">{voiceNameDisplay}</span>
-                <span className="text-xs text-gray-500 mt-0.5">{voiceDetails}</span>
-              </div>
-              <div className="w-8 h-8 rounded-full bg-gray-50 group-hover:bg-gray-100 flex items-center justify-center transition-colors">
-                <ArrowRight className="w-4 h-4 text-gray-600" />
-              </div>
+              Settings
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveRightTab('history')}
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                activeRightTab === 'history' 
+                  ? 'border-gray-900 text-gray-900' 
+                  : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              History
             </button>
           </div>
 
-          {/* Emotion Dropdown */}
-          <div className="flex flex-col gap-2">
-            <label className="text-sm font-semibold text-gray-900">Emotion Style</label>
-            <CustomDropdown value={emotion} onChange={setEmotion} />
-          </div>
+          {activeRightTab === 'settings' ? (
+            <>
+              {/* Voice Selector Card */}
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-semibold text-gray-900 flex items-center gap-2">
+                  <Settings2 className="w-4 h-4 text-gray-400" />
+                  Voice Model
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsVoiceModalOpen(true)}
+                  className="group flex items-center justify-between bg-white border border-gray-200 hover:border-gray-300 rounded-xl p-4 shadow-sm transition-all text-left"
+                >
+                  <div className="flex flex-col overflow-hidden">
+                    <span className="font-bold text-gray-900 text-base truncate">{voiceNameDisplay}</span>
+                    <span className="text-sm text-gray-500 mt-0.5">{voiceDetails}</span>
+                  </div>
+                  <div className="w-8 h-8 rounded-full bg-gray-50 group-hover:bg-gray-100 flex items-center justify-center transition-colors">
+                    <ArrowRight className="w-4 h-4 text-gray-600" />
+                  </div>
+                </button>
+              </div>
 
-          {/* Speed Slider */}
-          <div className="flex flex-col gap-2 mt-2">
-            <div className="flex justify-between items-center">
-              <label className="text-sm font-semibold text-gray-900">Speed</label>
-              <span className="text-xs font-mono bg-gray-100 text-gray-700 px-2 py-1 rounded">{speed.toFixed(1)}x</span>
+              {/* Emotion Dropdown */}
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-semibold text-gray-900">Emotion Style</label>
+                <CustomDropdown value={emotion} onChange={setEmotion} />
+              </div>
+
+              {/* Speed Slider */}
+              <div className="flex flex-col gap-2 mt-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-sm font-semibold text-gray-900">Speed</label>
+                  <span className="text-xs font-mono bg-gray-100 text-gray-700 px-2 py-1 rounded">{speed.toFixed(1)}x</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="2.0"
+                  step="0.1"
+                  value={speed}
+                  onChange={(e) => setSpeed(parseFloat(e.target.value))}
+                  className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-900"
+                />
+              </div>
+
+              {/* Pitch Slider */}
+              <div className="flex flex-col gap-2 mt-2">
+                <div className="flex justify-between items-center">
+                  <label className="text-sm font-semibold text-gray-900">Pitch</label>
+                  <span className="text-xs font-mono bg-gray-100 text-gray-700 px-2 py-1 rounded">{pitch > 0 ? `+${pitch}` : pitch}</span>
+                </div>
+                <input
+                  type="range"
+                  min="-50"
+                  max="50"
+                  step="1"
+                  value={pitch}
+                  onChange={(e) => setPitch(parseInt(e.target.value))}
+                  className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-900"
+                />
+              </div>
+            </>
+          ) : (
+            <div className="flex-1 bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+              <HistoryList />
             </div>
-            <input
-              type="range"
-              min="0.5"
-              max="2.0"
-              step="0.1"
-              value={speed}
-              onChange={(e) => setSpeed(parseFloat(e.target.value))}
-              className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-900"
-            />
-          </div>
-
-          {/* Pitch Slider */}
-          <div className="flex flex-col gap-2 mt-2">
-            <div className="flex justify-between items-center">
-              <label className="text-sm font-semibold text-gray-900">Pitch</label>
-              <span className="text-xs font-mono bg-gray-100 text-gray-700 px-2 py-1 rounded">{pitch > 0 ? `+${pitch}` : pitch}</span>
-            </div>
-            <input
-              type="range"
-              min="-50"
-              max="50"
-              step="1"
-              value={pitch}
-              onChange={(e) => setPitch(parseInt(e.target.value))}
-              className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-900"
-            />
-          </div>
-
+          )}
         </div>
       </form>
 

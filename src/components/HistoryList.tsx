@@ -1,10 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Play, Calendar, Trash2 } from 'lucide-react';
+import { Play, Calendar, Trash2, Edit2, Check } from 'lucide-react';
 
 export interface HistoryItem {
   id: string;
+  title?: string;
   text: string;
   voiceName: string;
   audioUrl: string;
@@ -14,6 +15,8 @@ export interface HistoryItem {
 export default function HistoryList() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
 
   useEffect(() => {
     const saved = localStorage.getItem('tts_history');
@@ -27,9 +30,6 @@ export default function HistoryList() {
   }, []);
 
   const playAudio = (id: string, url: string) => {
-    // If something is already playing, the browser handles it, 
-    // but for UI sake we'll just open it or play it in a hidden audio tag.
-    // For simplicity, we just use a native audio object.
     const audio = new Audio(url);
     audio.play();
     setPlayingId(id);
@@ -41,50 +41,90 @@ export default function HistoryList() {
     setHistory([]);
   };
 
+  const saveTitle = (id: string) => {
+    const newHistory = history.map(item => 
+      item.id === id ? { ...item, title: editTitle } : item
+    );
+    setHistory(newHistory);
+    localStorage.setItem('tts_history', JSON.stringify(newHistory));
+    setEditingId(null);
+  };
+
+  const startEdit = (item: HistoryItem) => {
+    setEditingId(item.id);
+    setEditTitle(item.title || 'Generated Audio');
+  };
+
   if (history.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-        <p>No generation history found.</p>
+      <div className="flex flex-col items-center justify-center p-12 text-gray-400">
+        <p className="text-sm">Generated scripts will appear here.</p>
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-4xl mx-auto flex flex-col gap-4 animate-in fade-in duration-300">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-bold text-gray-800">Your Generations</h2>
+    <div className="flex flex-col h-[600px]">
+      <div className="flex justify-between items-center p-4 border-b border-gray-100">
+        <h2 className="text-sm font-bold text-gray-800">Recent Generations</h2>
         <button 
           onClick={clearHistory}
-          className="flex items-center gap-2 text-sm text-red-500 hover:text-red-600 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors"
+          className="text-xs text-red-500 hover:text-red-700 font-medium transition-colors"
         >
-          <Trash2 className="w-4 h-4" />
-          Clear History
+          Clear All
         </button>
       </div>
 
-      {history.map((item) => (
-        <div key={item.id} className="flex items-center justify-between bg-white border border-gray-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-shadow">
-          <div className="flex flex-col gap-2 overflow-hidden pr-6">
-            <p className="text-gray-800 text-sm font-medium truncate">{item.text}</p>
-            <div className="flex gap-4 text-xs text-gray-500">
-              <span className="flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5" />
-                {new Date(item.date).toLocaleDateString()}
-              </span>
-              <span className="px-2 py-0.5 bg-gray-100 rounded text-gray-600 font-medium">
-                {item.voiceName}
-              </span>
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+        {history.map((item) => (
+          <div key={item.id} className="flex flex-col gap-2 p-3 bg-gray-50 border border-gray-100 rounded-lg hover:border-gray-200 transition-colors group">
+            <div className="flex items-center justify-between gap-2">
+              {editingId === item.id ? (
+                <div className="flex items-center gap-2 flex-1">
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="flex-1 text-sm font-bold bg-white border border-gray-300 rounded px-2 py-1 outline-none focus:border-gray-900"
+                    autoFocus
+                    onKeyDown={(e) => e.key === 'Enter' && saveTitle(item.id)}
+                  />
+                  <button onClick={() => saveTitle(item.id)} className="p-1 text-green-600 hover:bg-green-50 rounded">
+                    <Check className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 flex-1 overflow-hidden">
+                  <h3 className="text-sm font-bold text-gray-900 truncate">
+                    {item.title || 'Generated Audio'}
+                  </h3>
+                  <button 
+                    onClick={() => startEdit(item)}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-900 transition-opacity"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+              
+              <button
+                onClick={() => playAudio(item.id, item.audioUrl)}
+                className="shrink-0 w-8 h-8 rounded-full bg-gray-900 hover:bg-gray-800 flex items-center justify-center text-white transition-colors"
+              >
+                <Play className={`w-3.5 h-3.5 ml-0.5 ${playingId === item.id ? 'animate-pulse text-indigo-400' : 'fill-current'}`} />
+              </button>
+            </div>
+            
+            <p className="text-gray-500 text-xs line-clamp-2 leading-relaxed">{item.text}</p>
+            
+            <div className="flex items-center gap-3 text-[11px] text-gray-400 mt-1">
+              <span>{new Date(item.date).toLocaleDateString()}</span>
+              <span>•</span>
+              <span>{item.voiceName}</span>
             </div>
           </div>
-            
-          <button
-            onClick={() => playAudio(item.id, item.audioUrl)}
-            className="shrink-0 w-12 h-12 rounded-full bg-gray-900 hover:bg-gray-800 flex items-center justify-center text-white transition-colors"
-          >
-            <Play className={`w-5 h-5 ml-1 ${playingId === item.id ? 'animate-pulse text-indigo-400' : 'fill-current'}`} />
-          </button>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
