@@ -12,13 +12,18 @@ export interface HistoryItem {
   date: string;
 }
 
-export default function HistoryList() {
+export interface PendingGeneration {
+  progress: number;
+  text: string;
+  voiceName: string;
+}
+
+export default function HistoryList({ pending }: { pending?: PendingGeneration | null }) {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   
-  // Track the audio instance to prevent overlapping
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -33,14 +38,12 @@ export default function HistoryList() {
   }, []);
 
   const playAudio = (id: string, url: string) => {
-    // If clicking the same item that's currently playing, pause it
     if (audioRef.current && playingId === id) {
       audioRef.current.pause();
       setPlayingId(null);
       return;
     }
 
-    // If another item is playing, stop it first
     if (audioRef.current) {
       audioRef.current.pause();
     }
@@ -72,7 +75,7 @@ export default function HistoryList() {
     setEditTitle(item.title || 'Generated Audio');
   };
 
-  if (history.length === 0) {
+  if (history.length === 0 && !pending) {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-gray-400">
         <p className="text-sm">Generated scripts will appear here.</p>
@@ -93,6 +96,24 @@ export default function HistoryList() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+        {pending && (
+          <div className="flex flex-col gap-2 p-3 bg-white dark:bg-[#111] border border-gray-100 dark:border-gray-800 rounded-lg group animate-pulse">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-white">Generating Audio...</h3>
+            
+            <div className="w-full h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden my-1">
+              <div 
+                className="h-full bg-black dark:bg-white transition-all duration-300"
+                style={{ width: `${pending.progress}%` }}
+              />
+            </div>
+            
+            <p className="text-gray-500 text-xs line-clamp-2 leading-relaxed">{pending.text}</p>
+            <div className="flex items-center gap-3 text-[11px] text-gray-400 mt-1">
+              <span>{pending.voiceName}</span>
+            </div>
+          </div>
+        )}
+
         {history.map((item) => (
           <div key={item.id} className="flex flex-col gap-2 p-3 bg-gray-50 dark:bg-[#1a1a1a] border border-gray-100 dark:border-gray-800 rounded-lg hover:border-gray-200 dark:border-gray-700 transition-colors group">
             <div className="flex items-center justify-between gap-2">
@@ -140,7 +161,7 @@ export default function HistoryList() {
             
             <div className="flex items-center gap-3 text-[11px] text-gray-400 mt-1">
               <span>{new Date(item.date).toLocaleDateString()}</span>
-              <span>â€¢</span>
+              <span>•</span>
               <span>{item.voiceName}</span>
             </div>
           </div>

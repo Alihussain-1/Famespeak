@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import VoiceModal from '@/components/VoiceModal';
 import CustomDropdown from '@/components/CustomDropdown';
 import { VoiceOption } from '@/types/tts';
@@ -31,6 +31,9 @@ export default function TTSForm() {
     
     setLoading(true);
     setProgress(0);
+    
+    // Switch to history tab immediately so they see the progress bar
+    setActiveRightTab('history');
 
     // Fake progress interval
     const progressInterval = setInterval(() => {
@@ -42,7 +45,6 @@ export default function TTSForm() {
 
     const ratePercent = Math.round((speed - 1) * 100);
     const rateStr = ratePercent >= 0 ? `+${ratePercent}%` : `${ratePercent}%`;
-
     const pitchStr = pitch >= 0 ? `+${pitch}Hz` : `${pitch}Hz`;
 
     const payload = { 
@@ -78,9 +80,12 @@ export default function TTSForm() {
         const saved = localStorage.getItem('tts_history');
         const historyList = saved ? JSON.parse(saved) : [];
         localStorage.setItem('tts_history', JSON.stringify([newHistoryItem, ...historyList]));
-
-        // Switch to history tab (we DO NOT auto play the audio anymore)
-        setActiveRightTab('history');
+        
+        // Ensure localStorage event fires so HistoryList updates if needed, though it's easier to just trigger a re-render.
+        // The easiest way is to let the user re-open history, or rely on the state changing. 
+        // Wait, HistoryList reads from localStorage on mount. If it's already mounted, it won't see the new item immediately unless we force a reload.
+        // Actually, since we unmount the fake progress bar, it might just need a window.dispatchEvent(new Event("storage")).
+        window.dispatchEvent(new Event("storage")); // Just in case
       } else {
         alert(data.error || 'Failed to generate audio.');
       }
@@ -92,7 +97,7 @@ export default function TTSForm() {
       setTimeout(() => {
         setLoading(false);
         setProgress(0);
-      }, 500); // 500ms delay so user can see 100% completion
+      }, 500); // 500ms delay so user can see 100% completion before it vanishes
     }
   };
 
@@ -108,46 +113,44 @@ export default function TTSForm() {
     setIsVoiceModalOpen(false);
   };
 
+  // We pass a key to HistoryList so it re-mounts when loading finishes, ensuring it reads the newest localStorage item.
+  // We can use the loading boolean as part of the key.
+  const historyKey = loading ? 'loading' : 'idle';
+
   return (
     <>
-      {/* Top Progress Bar */}
-      <div className="fixed top-0 left-0 right-0 h-1 z-50 pointer-events-none">
-        {loading && (
-          <div 
-            className="h-full bg-gray-900 dark:bg-gray-100 transition-all duration-300 ease-out"
-            style={{ width: `${progress}%` }}
-          />
-        )}
-      </div>
-
       <form onSubmit={handleSubmit} className="flex flex-col lg:flex-row w-full h-full min-h-[calc(100vh-64px)]">
         
         {/* LEFT PANEL: Script Input */}
-        <div className="lg:w-[65%] flex flex-col p-6 lg:p-12 lg:pr-16 border-r border-gray-100 dark:border-gray-800">
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Write or paste your script..."
-            className="w-full flex-grow text-gray-800 dark:text-gray-100 text-xl lg:text-2xl resize-none placeholder-gray-400 dark:placeholder-gray-600 bg-transparent focus:outline-none min-h-[400px] leading-relaxed"
-            required
-          />
-
-          <div className="flex justify-between items-center mt-6 pt-4 relative">
-            <div className="flex items-center gap-2">
-               <span className="text-sm font-medium text-gray-400 dark:text-gray-500">{text.length} / 20,000</span>
-            </div>
-            <button
-              type="submit"
-              disabled={loading || !text.trim()}
-              className="flex items-center justify-center gap-2 bg-black dark:bg-white disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white dark:text-black font-semibold px-6 py-2.5 rounded-lg transition-all shadow-sm"
-            >
-              {loading ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> {progress}%</>
-              ) : (
-                <><Sparkles className="w-4 h-4" /> Generate</>
-              )}
-            </button>
+        <div className="lg:w-[65%] flex flex-col border-r border-gray-100 dark:border-gray-800 relative h-full">
+          <div className="flex-1 overflow-y-auto p-6 lg:p-12 lg:pr-16">
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Write or paste your script..."
+              className="w-full h-full text-gray-800 dark:text-gray-100 text-xl lg:text-2xl resize-none placeholder-gray-400 dark:placeholder-gray-600 bg-transparent focus:outline-none min-h-[400px] leading-relaxed"
+              required
+            />
           </div>
+
+          {text.trim().length > 0 && (
+            <div className="bg-white dark:bg-[#0a0a0a] border-t border-gray-100 dark:border-gray-800 p-4 px-6 lg:px-12 flex items-center justify-between sticky bottom-0 z-10">
+              <span className="text-sm font-medium text-gray-400 dark:text-gray-500">
+                {text.length} / 20,000
+              </span>
+              <button
+                type="submit"
+                disabled={loading || !text.trim()}
+                className="flex items-center justify-center gap-2 bg-gray-500 hover:bg-gray-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white font-medium px-5 py-2 rounded-lg transition-colors shadow-sm"
+              >
+                {loading ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
+                ) : (
+                  <><Sparkles className="w-4 h-4" /> Generate</>
+                )}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* RIGHT PANEL: Settings & History */}
@@ -243,7 +246,10 @@ export default function TTSForm() {
             </div>
           ) : (
             <div className="flex-1">
-              <HistoryList />
+              <HistoryList 
+                key={historyKey} 
+                pending={loading ? { progress, text, voiceName: voiceNameDisplay } : null} 
+              />
             </div>
           )}
         </div>
