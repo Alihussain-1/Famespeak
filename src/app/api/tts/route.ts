@@ -66,12 +66,12 @@ export async function POST(req: NextRequest): Promise<NextResponse<TTSApiRespons
 
   // 3. Call edge-tts.ts
   try {
-    const { fileName } = await generateAudio({ text, voice, rate, pitch, volume });
+    const { base64Audio } = await generateAudio({ text, voice, rate, pitch, volume });
 
     // 4. Return response
     return NextResponse.json({
       success: true,
-      audioUrl: `/audio/${fileName}`,
+      audioUrl: `data:audio/mp3;base64,${base64Audio}`,
     });
   } catch (err) {
     if (err instanceof EdgeTTSError) {

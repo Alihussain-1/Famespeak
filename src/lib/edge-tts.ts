@@ -48,8 +48,7 @@ export interface GenerateAudioOptions {
 }
 
 export interface GenerateAudioResult {
-  filePath: string;
-  fileName: string;
+  base64Audio: string;
 }
 
 export async function generateAudio(
@@ -61,7 +60,6 @@ export async function generateAudio(
     rate = '+0%',
     pitch = '+0Hz',
     volume = '+0%',
-    outputDir = path.join(process.cwd(), 'public', 'audio'),
   } = options;
 
   if (!text || text.trim().length === 0) {
@@ -71,25 +69,18 @@ export async function generateAudio(
     throw new EdgeTTSError('Voice must be specified.', 'INVALID_INPUT');
   }
 
-  await fs.mkdir(outputDir, { recursive: true });
-
-  const baseFileName = `tts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const filePath = path.join(outputDir, baseFileName); // Library will add .mp3 to this file path
-  const finalFileName = `${baseFileName}.mp3`; // This is what we return to the frontend
-
   try {
     const tts = new EdgeTTS();
 
     // Synthesize audio data in memory
     await tts.synthesize(text, voice, { rate, pitch, volume });
 
-    // Write to disk (library will save as `filePath` + `.mp3`)
-    await tts.toFile(filePath);
+    // Get the audio buffer directly in memory (Vercel read-only filesystem fix)
+    const buffer = tts.toBuffer();
+    const base64Audio = buffer.toString('base64');
 
-    return { filePath: filePath + '.mp3', fileName: finalFileName };
+    return { base64Audio };
   } catch (err) {
-    await fs.unlink(filePath).catch(() => {});
-
     const message = (err as Error).message ?? 'Unknown TTS error';
 
     if (message.includes('voice')) {
