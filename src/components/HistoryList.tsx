@@ -1,4 +1,4 @@
-'use client';
+ï»¿'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { Play, Square, Calendar, Trash2, Edit2, Check, Loader2 } from 'lucide-react';
@@ -162,7 +162,7 @@ export default function HistoryList({ pending }: { pending?: PendingGeneration |
             
             <div className="flex items-center gap-3 text-[11px] text-gray-400 mt-1">
               <span>{new Date(item.date).toLocaleDateString()}</span>
-              <span>•</span>
+              <span>-</span>
               <span>{item.voiceName}</span>
             </div>
           </div>

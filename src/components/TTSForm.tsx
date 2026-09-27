@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import VoiceModal from '@/components/VoiceModal';
@@ -18,8 +18,6 @@ export default function TTSForm() {
   const [pitch, setPitch] = useState(0);
   
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
-  
-  // Loading and Progress State
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
 
@@ -31,15 +29,12 @@ export default function TTSForm() {
     
     setLoading(true);
     setProgress(0);
-    
-    // Switch to history tab immediately so they see the progress bar
     setActiveRightTab('history');
 
-    // Fake progress interval
     const progressInterval = setInterval(() => {
       setProgress((prev) => {
         if (prev >= 90) return prev;
-        return prev + 10; // Jump 10% every 400ms
+        return prev + 10;
       });
     }, 400);
 
@@ -80,12 +75,7 @@ export default function TTSForm() {
         const saved = localStorage.getItem('tts_history');
         const historyList = saved ? JSON.parse(saved) : [];
         localStorage.setItem('tts_history', JSON.stringify([newHistoryItem, ...historyList]));
-        
-        // Ensure localStorage event fires so HistoryList updates if needed, though it's easier to just trigger a re-render.
-        // The easiest way is to let the user re-open history, or rely on the state changing. 
-        // Wait, HistoryList reads from localStorage on mount. If it's already mounted, it won't see the new item immediately unless we force a reload.
-        // Actually, since we unmount the fake progress bar, it might just need a window.dispatchEvent(new Event("storage")).
-        window.dispatchEvent(new Event("storage")); // Just in case
+        window.dispatchEvent(new Event("storage"));
       } else {
         alert(data.error || 'Failed to generate audio.');
       }
@@ -97,7 +87,7 @@ export default function TTSForm() {
       setTimeout(() => {
         setLoading(false);
         setProgress(0);
-      }, 500); // 500ms delay so user can see 100% completion before it vanishes
+      }, 500);
     }
   };
 
@@ -113,44 +103,40 @@ export default function TTSForm() {
     setIsVoiceModalOpen(false);
   };
 
-  // We pass a key to HistoryList so it re-mounts when loading finishes, ensuring it reads the newest localStorage item.
-  // We can use the loading boolean as part of the key.
   const historyKey = loading ? 'loading' : 'idle';
 
   return (
     <>
-      <form onSubmit={handleSubmit} className="flex flex-col lg:flex-row w-full h-full min-h-[calc(100vh-64px)]">
+      <form onSubmit={handleSubmit} className="flex flex-col lg:flex-row w-full flex-1">
         
         {/* LEFT PANEL: Script Input */}
-        <div className="lg:w-[65%] flex flex-col border-r border-gray-100 dark:border-gray-800 relative h-full">
-          <div className="flex-1 overflow-y-auto p-6 lg:p-12 lg:pr-16">
+        <div className="lg:w-[65%] flex flex-col justify-between border-r border-gray-100 dark:border-gray-800 p-6 lg:p-12 lg:pr-16">
+          <div className="flex-1 flex flex-col">
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder="Write or paste your script..."
-              className="w-full h-full text-gray-800 dark:text-gray-100 text-xl lg:text-2xl resize-none placeholder-gray-400 dark:placeholder-gray-600 bg-transparent focus:outline-none min-h-[400px] leading-relaxed"
+              className="w-full flex-grow text-gray-800 dark:text-gray-100 text-xl lg:text-2xl resize-none placeholder-gray-400 dark:placeholder-gray-600 bg-transparent focus:outline-none min-h-[350px] leading-relaxed"
               required
             />
           </div>
 
-          {text.trim().length > 0 && (
-            <div className="bg-white dark:bg-[#0a0a0a] border-t border-gray-100 dark:border-gray-800 p-4 px-6 lg:px-12 flex items-center justify-between sticky bottom-0 z-10">
-              <span className="text-sm font-medium text-gray-400 dark:text-gray-500">
-                {text.length} / 20,000
-              </span>
-              <button
-                type="submit"
-                disabled={loading || !text.trim()}
-                className="flex items-center justify-center gap-2 bg-gray-500 hover:bg-gray-600 disabled:bg-gray-300 dark:disabled:bg-gray-700 text-white font-medium px-5 py-2 rounded-lg transition-colors shadow-sm"
-              >
-                {loading ? (
-                  <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
-                ) : (
-                  <><Sparkles className="w-4 h-4" /> Generate</>
-                )}
-              </button>
-            </div>
-          )}
+          <div className="flex items-center justify-between pt-4 mt-4 border-t border-gray-100 dark:border-gray-800">
+            <span className="text-sm font-medium text-gray-400 dark:text-gray-500">
+              {text.length} / 20,000
+            </span>
+            <button
+              type="submit"
+              disabled={loading || !text.trim()}
+              className="flex items-center justify-center gap-2 bg-gray-900 hover:bg-black dark:bg-gray-100 dark:hover:bg-white dark:text-gray-900 disabled:opacity-40 text-white font-medium px-6 py-2.5 rounded-xl transition-all shadow-sm text-sm cursor-pointer"
+            >
+              {loading ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
+              ) : (
+                <><Sparkles className="w-4 h-4" /> Generate</>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* RIGHT PANEL: Settings & History */}
