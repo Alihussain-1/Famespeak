@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { Play, Calendar, Trash2, Edit2, Check } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Play, Square, Calendar, Trash2, Edit2, Check } from 'lucide-react';
 
 export interface HistoryItem {
   id: string;
@@ -17,6 +17,9 @@ export default function HistoryList() {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  
+  // Track the audio instance to prevent overlapping
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem('tts_history');
@@ -30,7 +33,21 @@ export default function HistoryList() {
   }, []);
 
   const playAudio = (id: string, url: string) => {
+    // If clicking the same item that's currently playing, pause it
+    if (audioRef.current && playingId === id) {
+      audioRef.current.pause();
+      setPlayingId(null);
+      return;
+    }
+
+    // If another item is playing, stop it first
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+
     const audio = new Audio(url);
+    audioRef.current = audio;
+    
     audio.play();
     setPlayingId(id);
     audio.onended = () => setPlayingId(null);
@@ -111,7 +128,11 @@ export default function HistoryList() {
                 onClick={() => playAudio(item.id, item.audioUrl)}
                 className="shrink-0 w-8 h-8 rounded-full bg-gray-900 hover:bg-gray-800 flex items-center justify-center text-white transition-colors"
               >
-                <Play className={`w-3.5 h-3.5 ml-0.5 ${playingId === item.id ? 'animate-pulse text-indigo-400' : 'fill-current'}`} />
+                {playingId === item.id ? (
+                  <Square className="w-3.5 h-3.5 fill-current" />
+                ) : (
+                  <Play className="w-3.5 h-3.5 ml-0.5 fill-current" />
+                )}
               </button>
             </div>
             

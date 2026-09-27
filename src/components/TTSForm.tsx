@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import VoiceModal from '@/components/VoiceModal';
 import CustomDropdown from '@/components/CustomDropdown';
 import { VoiceOption } from '@/types/tts';
@@ -18,7 +18,10 @@ export default function TTSForm() {
   const [pitch, setPitch] = useState(0);
   
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  
+  // Loading and Progress State
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   const [activeRightTab, setActiveRightTab] = useState<'settings' | 'history'>('settings');
 
@@ -27,6 +30,15 @@ export default function TTSForm() {
     if (!text.trim()) return;
     
     setLoading(true);
+    setProgress(0);
+
+    // Fake progress interval
+    const progressInterval = setInterval(() => {
+      setProgress((prev) => {
+        if (prev >= 90) return prev;
+        return prev + 10; // Jump 10% every 400ms
+      });
+    }, 400);
 
     const ratePercent = Math.round((speed - 1) * 100);
     const rateStr = ratePercent >= 0 ? `+${ratePercent}%` : `${ratePercent}%`;
@@ -50,6 +62,9 @@ export default function TTSForm() {
       });
 
       const data = await res.json();
+      
+      clearInterval(progressInterval);
+      setProgress(100);
 
       if (data.success && data.audioUrl) {
         const newHistoryItem = {
@@ -64,17 +79,20 @@ export default function TTSForm() {
         const historyList = saved ? JSON.parse(saved) : [];
         localStorage.setItem('tts_history', JSON.stringify([newHistoryItem, ...historyList]));
 
+        // Switch to history tab (we DO NOT auto play the audio anymore)
         setActiveRightTab('history');
-
-        const audio = new Audio(data.audioUrl);
-        audio.play();
       } else {
         alert(data.error || 'Failed to generate audio.');
       }
     } catch (err) {
+      clearInterval(progressInterval);
+      setProgress(0);
       alert('Network error. Please check your connection.');
     } finally {
-      setLoading(false);
+      setTimeout(() => {
+        setLoading(false);
+        setProgress(0);
+      }, 500); // 500ms delay so user can see 100% completion
     }
   };
 
@@ -92,6 +110,16 @@ export default function TTSForm() {
 
   return (
     <>
+      {/* Top Progress Bar */}
+      <div className="fixed top-0 left-0 right-0 h-1 z-50 pointer-events-none">
+        {loading && (
+          <div 
+            className="h-full bg-gray-900 dark:bg-gray-100 transition-all duration-300 ease-out"
+            style={{ width: `${progress}%` }}
+          />
+        )}
+      </div>
+
       <form onSubmit={handleSubmit} className="flex flex-col lg:flex-row w-full h-full min-h-[calc(100vh-64px)]">
         
         {/* LEFT PANEL: Script Input */}
@@ -104,17 +132,17 @@ export default function TTSForm() {
             required
           />
 
-          <div className="flex justify-between items-center mt-6 pt-4">
+          <div className="flex justify-between items-center mt-6 pt-4 relative">
             <div className="flex items-center gap-2">
                <span className="text-sm font-medium text-gray-400 dark:text-gray-500">{text.length} / 20,000</span>
             </div>
             <button
               type="submit"
               disabled={loading || !text.trim()}
-              className="flex items-center justify-center gap-2 bg-black dark:bg-white disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white dark:text-black font-semibold px-6 py-3 rounded-xl transition-all shadow-sm hover:scale-105 active:scale-95"
+              className="flex items-center justify-center gap-2 bg-black dark:bg-white disabled:bg-gray-400 dark:disabled:bg-gray-600 text-white dark:text-black font-semibold px-6 py-2.5 rounded-lg transition-all shadow-sm"
             >
               {loading ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</>
+                <><Loader2 className="w-4 h-4 animate-spin" /> {progress}%</>
               ) : (
                 <><Sparkles className="w-4 h-4" /> Generate</>
               )}
