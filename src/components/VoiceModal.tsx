@@ -98,32 +98,34 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
     }
   };
 
+  const fetchVoices = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/tts');
+      const data = await res.json();
+      if (data.success) {
+        const formatted = data.voices.map((v: any) => ({
+          value: v.ShortName,
+          label: v.LocalName || v.DisplayName || v.ShortName.split('-')[2], // Get cleaner name
+          locale: v.Locale,
+          localeName: v.LocaleName || '', // e.g., "English (United States)"
+          gender: v.Gender,
+        }));
+        setVoices(formatted);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (!isOpen) return;
-    
-    async function fetchVoices() {
-      if (voices.length > 0) return;
-      try {
-        const res = await fetch('/api/tts');
-        const data = await res.json();
-        if (data.success) {
-          const formatted = data.voices.map((v: any) => ({
-            value: v.ShortName,
-            label: v.LocalName || v.DisplayName || v.ShortName.split('-')[2], // Get cleaner name
-            locale: v.Locale,
-            localeName: v.LocaleName || '', // e.g., "English (United States)"
-            gender: v.Gender,
-          }));
-          setVoices(formatted);
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+    if (voices.length === 0) {
+      fetchVoices();
     }
-    fetchVoices();
-  }, [isOpen, voices.length]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

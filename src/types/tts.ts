@@ -16,6 +16,7 @@ export interface TTSRequest {
   rate?: string;   // e.g. "+0%", "-20%", "+50%"
   pitch?: string;  // e.g. "+0Hz", "-10Hz", "+5Hz"
   volume?: string; // e.g. "+0%", "-10%", "+100%"
+  style?: string;  // e.g. "cheerful", "sad"
 }
 
 // Successful TTS response
