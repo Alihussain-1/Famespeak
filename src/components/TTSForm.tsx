@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import VoiceModal from '@/components/VoiceModal';
@@ -123,7 +123,7 @@ export default function TTSForm() {
 
           <div className="flex items-center justify-between pt-4 mt-4 border-t border-gray-100 dark:border-gray-800">
             <span className="text-sm font-medium text-gray-400 dark:text-gray-500">
-              {text.length} / 20,000
+              {text.length} characters
             </span>
             <button
               type="submit"

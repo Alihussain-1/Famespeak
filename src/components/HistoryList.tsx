@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import { Play, Square, Calendar, Trash2, Edit2, Check, Loader2 } from 'lucide-react';
@@ -93,6 +93,7 @@ export default function HistoryList({ pending }: { pending?: PendingGeneration |
       <div className="flex justify-between items-center p-4 border-b border-gray-100 dark:border-gray-800">
         <h2 className="text-sm font-bold text-gray-800 dark:text-gray-200">Recent Generations</h2>
         <button 
+          type="button"
           onClick={clearHistory}
           className="text-xs text-red-500 hover:text-red-700 font-medium transition-colors"
         >
@@ -128,7 +129,7 @@ export default function HistoryList({ pending }: { pending?: PendingGeneration |
                     autoFocus
                     onKeyDown={(e) => e.key === 'Enter' && saveTitle(item.id)}
                   />
-                  <button onClick={() => saveTitle(item.id)} className="p-1 text-green-600 hover:bg-green-50 rounded">
+                  <button type="button" onClick={() => saveTitle(item.id)} className="p-1 text-green-600 hover:bg-green-50 rounded">
                     <Check className="w-4 h-4" />
                   </button>
                 </div>
@@ -138,6 +139,7 @@ export default function HistoryList({ pending }: { pending?: PendingGeneration |
                     {item.title || 'Generated Audio'}
                   </h3>
                   <button 
+                    type="button"
                     onClick={() => startEdit(item)}
                     className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-gray-900 dark:text-white transition-opacity"
                   >
@@ -147,8 +149,9 @@ export default function HistoryList({ pending }: { pending?: PendingGeneration |
               )}
               
               <button
+                type="button"
                 onClick={() => playAudio(item.id, item.audioUrl)}
-                className="shrink-0 w-8 h-8 rounded-full bg-gray-900 hover:bg-gray-800 flex items-center justify-center text-white transition-colors"
+                className="shrink-0 w-8 h-8 rounded-full bg-gray-900 hover:bg-gray-800 flex items-center justify-center text-white transition-colors cursor-pointer"
               >
                 {playingId === item.id ? (
                   <Square className="w-3.5 h-3.5 fill-current" />
