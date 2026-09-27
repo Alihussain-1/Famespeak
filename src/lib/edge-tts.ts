@@ -27,7 +27,7 @@ export async function fetchVoices(): Promise<EdgeVoice[]> {
   try {
     const tts = new EdgeTTS();
     const voices = await tts.getVoices();
-    return voices as EdgeVoice[];
+    return voices as any as EdgeVoice[];
   } catch (err) {
     throw new EdgeTTSError(
       `Failed to fetch voices: ${(err as Error).message}`,

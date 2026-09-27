@@ -1,12 +1,14 @@
-// Voice metadata returned from Edge TTS
 export interface EdgeVoice {
-  Name: string;
+  Name?: string;
   ShortName: string;
   Gender: string;
   Locale: string;
-  SuggestedCodec: string;
-  FriendlyName: string;
-  Status: string;
+  SuggestedCodec?: string;
+  FriendlyName?: string;
+  Status?: string;
+  LocalName?: string;
+  DisplayName?: string;
+  LocaleName?: string;
 }
 
 // Request body sent from frontend to POST /api/tts
