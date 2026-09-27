@@ -20,11 +20,42 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
   const [genderFilter, setGenderFilter] = useState('All');
   const [languageFilter, setLanguageFilter] = useState('All');
   const [countryFilter, setCountryFilter] = useState('All');
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [favorites, setFavorites] = useState<string[]>([]);
 
   // Preview state
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Load favorites on mount
+  useEffect(() => {
+    const savedFavs = localStorage.getItem('tts_favorites');
+    if (savedFavs) {
+      try { setFavorites(JSON.parse(savedFavs)); } catch (e) {}
+    }
+  }, []);
+
+  const toggleFavorite = (voiceId: string) => {
+    let newFavs;
+    if (favorites.includes(voiceId)) {
+      newFavs = favorites.filter(id => id !== voiceId);
+    } else {
+      newFavs = [...favorites, voiceId];
+    }
+    setFavorites(newFavs);
+    localStorage.setItem('tts_favorites', JSON.stringify(newFavs));
+  };
+
+  const clearFilters = () => {
+    setSearch('');
+    setGenderFilter('All');
+    setLanguageFilter('All');
+    setCountryFilter('All');
+    setShowFavoritesOnly(false);
+  };
+
+  const activeFilterCount = (genderFilter !== 'All' ? 1 : 0) + (languageFilter !== 'All' ? 1 : 0) + (countryFilter !== 'All' ? 1 : 0);
 
   const handlePreview = async (voice: VoiceOption) => {
     // If playing, stop it
@@ -118,8 +149,9 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
     const matchesGender = genderFilter === 'All' || v.gender === genderFilter;
     const matchesLanguage = languageFilter === 'All' || lang === languageFilter;
     const matchesCountry = countryFilter === 'All' || country === countryFilter;
+    const matchesFavorites = showFavoritesOnly ? favorites.includes(v.value) : true;
     
-    return matchesSearch && matchesGender && matchesLanguage && matchesCountry;
+    return matchesSearch && matchesGender && matchesLanguage && matchesCountry && matchesFavorites;
   });
 
   return (
@@ -156,12 +188,18 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
               className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border rounded-lg transition-colors ${showFilters ? 'bg-gray-50 border-gray-200 text-gray-900' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
             >
               <SlidersHorizontal className="w-4 h-4" />
-              Filters
+              Filters {activeFilterCount > 0 && <span className="text-xs">({activeFilterCount})</span>}
             </button>
-            <button className="flex items-center justify-center w-10 h-10 bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors">
-              <Star className="w-4 h-4" />
+            <button 
+              onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
+              className={`flex items-center justify-center w-10 h-10 border rounded-lg transition-colors ${showFavoritesOnly ? 'bg-gray-900 border-gray-900 text-white' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+            >
+              <Star className={`w-4 h-4 ${showFavoritesOnly ? 'fill-current text-white' : ''}`} />
             </button>
-            <button className="flex items-center justify-center w-10 h-10 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors">
+            <button 
+              onClick={() => { fetchVoices(); }}
+              className="flex items-center justify-center w-10 h-10 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+            >
               <RotateCw className="w-4 h-4" />
             </button>
           </div>
@@ -215,9 +253,19 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
           )}
 
           {/* Results Info */}
-          <div className="flex items-center gap-2 pt-2 text-xs text-gray-500 border-b border-gray-100 pb-4">
-            <Filter className="w-3.5 h-3.5" />
-            Showing {filteredVoices.length} of {voices.length} free voices
+          <div className="flex items-center justify-between pt-2 text-xs text-gray-500 border-b border-gray-100 pb-4">
+            <div className="flex items-center gap-2">
+              <Filter className="w-3.5 h-3.5" />
+              Showing {filteredVoices.length} of {voices.length} free voices
+            </div>
+            {(activeFilterCount > 0 || search || showFavoritesOnly) && (
+              <button 
+                onClick={clearFilters}
+                className="font-medium text-gray-800 hover:text-black transition-colors"
+              >
+                Clear
+              </button>
+            )}
           </div>
         </div>
 
@@ -233,6 +281,7 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
                 const { lang, country } = parseLocaleName(voice.localeName || '');
                 const isPlaying = previewingVoice === voice.value;
                 const isLoadingPreview = loadingPreview === voice.value;
+                const isFavorite = favorites.includes(voice.value);
 
                 return (
                   <div
@@ -262,10 +311,13 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
                         )}
                       </button>
                       <button 
-                        onClick={(e) => { e.stopPropagation(); }}
-                        className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-200 rounded-md transition-colors"
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          toggleFavorite(voice.value);
+                        }}
+                        className={`p-2 rounded-md transition-colors ${isFavorite ? 'text-gray-900' : 'text-gray-400 hover:text-gray-900 hover:bg-gray-200'}`}
                       >
-                        <Star className="w-4 h-4" />
+                        <Star className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} />
                       </button>
                     </div>
                   </div>
