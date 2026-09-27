@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Play, Square, Calendar, Trash2, Edit2, Check } from 'lucide-react';
+import { Play, Square, Calendar, Trash2, Edit2, Check, Loader2 } from 'lucide-react';
 
 export interface HistoryItem {
   id: string;
@@ -57,6 +57,11 @@ export default function HistoryList({ pending }: { pending?: PendingGeneration |
   };
 
   const clearHistory = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setPlayingId(null);
     localStorage.removeItem('tts_history');
     setHistory([]);
   };
@@ -98,16 +103,12 @@ export default function HistoryList({ pending }: { pending?: PendingGeneration |
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
         {pending && (
           <div className="flex flex-col gap-2 p-3 bg-white dark:bg-[#111] border border-gray-100 dark:border-gray-800 rounded-lg group animate-pulse">
-            <h3 className="text-sm font-bold text-gray-900 dark:text-white">Generating Audio...</h3>
-            
-            <div className="w-full h-1.5 bg-gray-200 dark:bg-gray-800 rounded-full overflow-hidden my-1">
-              <div 
-                className="h-full bg-black dark:bg-white transition-all duration-300"
-                style={{ width: `${pending.progress}%` }}
-              />
+            <div className="flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white">Generating Audio...</h3>
             </div>
             
-            <p className="text-gray-500 text-xs line-clamp-2 leading-relaxed">{pending.text}</p>
+            <p className="text-gray-500 text-xs line-clamp-2 leading-relaxed mt-1">{pending.text}</p>
             <div className="flex items-center gap-3 text-[11px] text-gray-400 mt-1">
               <span>{pending.voiceName}</span>
             </div>
