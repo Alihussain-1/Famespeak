@@ -70,6 +70,7 @@ export default function TTSForm() {
           text: text,
           voiceName: voiceNameDisplay,
           audioUrl: data.audioUrl,
+          srt: data.srt || '',
           date: new Date().toISOString()
         };
         const saved = localStorage.getItem('tts_history');

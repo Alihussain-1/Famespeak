@@ -25,6 +25,7 @@ export interface TTSRequest {
 export interface TTSResponse {
   success: true;
   audioUrl: string;
+  srt?: string;
   duration?: number;
 }
 

@@ -5,9 +5,8 @@
  */
 
 import { EdgeTTS } from '@andresaya/edge-tts';
-import path from 'path';
-import fs from 'fs/promises';
 import { EdgeVoice } from '@/types/tts';
+import { buildSrt } from '@/lib/srt';
 
 // ─── Custom error class ───────────────────────────────────────────────────────
 
@@ -49,6 +48,7 @@ export interface GenerateAudioOptions {
 
 export interface GenerateAudioResult {
   base64Audio: string;
+  srt: string;
 }
 
 export async function generateAudio(
@@ -79,7 +79,15 @@ export async function generateAudio(
     const buffer = tts.toBuffer();
     const base64Audio = buffer.toString('base64');
 
-    return { base64Audio };
+    // Build subtitles from word timings (never fail the whole request over subtitles)
+    let srt = '';
+    try {
+      srt = buildSrt(text, tts.getWordBoundaries());
+    } catch (srtErr) {
+      console.error('[generateAudio] SRT build failed:', srtErr);
+    }
+
+    return { base64Audio, srt };
   } catch (err) {
     const message = (err as Error).message ?? 'Unknown TTS error';
 
