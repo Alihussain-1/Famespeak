@@ -2,9 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { VoiceOption } from '@/types/tts';
-import { Search, X, Play, Square, SlidersHorizontal, Star, RotateCw, Filter, Sparkles, Cpu, Volume2 } from 'lucide-react';
-import { KOKORO_VOICES, generateKokoroAudio } from '@/lib/kokoro-engine';
-import { PIPER_VOICES, generatePiperAudio } from '@/lib/piper-engine';
+import { Search, X, Play, Square, SlidersHorizontal, Star, RotateCw, Filter, Volume2 } from 'lucide-react';
 
 interface VoiceModalProps {
   isOpen: boolean;
@@ -13,11 +11,8 @@ interface VoiceModalProps {
   onSelect: (voiceShortName: string, fullVoiceInfo: VoiceOption) => void;
 }
 
-type EngineTab = 'edge' | 'kokoro' | 'piper';
-
 export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }: VoiceModalProps) {
-  const [activeEngine, setActiveEngine] = useState<EngineTab>('edge');
-  const [edgeVoices, setEdgeVoices] = useState<VoiceOption[]>([]);
+  const [voices, setVoices] = useState<VoiceOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   
@@ -30,7 +25,6 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
   // Preview state
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
   const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
-  const [previewStatus, setPreviewStatus] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Load favorites from localStorage
@@ -68,109 +62,49 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
       audioRef.current = null;
       if (previewingVoice === voice.value) {
         setPreviewingVoice(null);
-        setPreviewStatus(null);
         return;
       }
     }
 
     setLoadingPreview(voice.value);
     setPreviewingVoice(null);
-    setPreviewStatus('Preparing...');
 
     try {
-      if (voice.engine === 'kokoro') {
-        const { audioUrl } = await generateKokoroAudio(
-          `Hi, this is ${voice.label} using Kokoro AI.`,
-          voice.value,
-          1.0,
-          (pct, status) => {
-            setPreviewStatus(`${status} (${pct}%)`);
-          }
-        );
-        const audio = new Audio(audioUrl);
-        audioRef.current = audio;
-        audio.onended = () => {
-          setPreviewingVoice(null);
-          setPreviewStatus(null);
-          audioRef.current = null;
-        };
-        audio.onerror = () => {
-          setPreviewingVoice(null);
-          setPreviewStatus(null);
-          audioRef.current = null;
-        };
-        await audio.play();
-        setPreviewingVoice(voice.value);
-        setPreviewStatus(null);
-      } else if (voice.engine === 'piper') {
-        const { audioUrl } = await generatePiperAudio(
-          `Hello, this is ${voice.label} powered by Piper.`,
-          voice.value,
-          (pct, status) => {
-            setPreviewStatus(`${status} (${pct}%)`);
-          }
-        );
-        const audio = new Audio(audioUrl);
-        audioRef.current = audio;
-        audio.onended = () => {
-          setPreviewingVoice(null);
-          setPreviewStatus(null);
-          audioRef.current = null;
-        };
-        audio.onerror = () => {
-          setPreviewingVoice(null);
-          setPreviewStatus(null);
-          audioRef.current = null;
-        };
-        await audio.play();
-        setPreviewingVoice(voice.value);
-        setPreviewStatus(null);
-      } else {
-        // Edge Cloud TTS preview
-        const res = await fetch('/api/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: `Hi, I am ${voice.label.split('-')[0]}, this is a preview of my voice.`,
-            voice: voice.value,
-            rate: '+0%',
-            pitch: '+0Hz',
-            volume: '+0%',
-          }),
-        });
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: `Hi, I am ${voice.label.split('-')[0]}, this is a preview of my voice.`,
+          voice: voice.value,
+          rate: '+0%',
+          pitch: '+0Hz',
+          volume: '+0%',
+        }),
+      });
 
-        const data = await res.json();
-        if (data.success && data.audioUrl) {
-          const audio = new Audio(data.audioUrl);
-          audioRef.current = audio;
-          audio.onended = () => {
-            setPreviewingVoice(null);
-            setPreviewStatus(null);
-            audioRef.current = null;
-          };
-          audio.onerror = () => {
-            setPreviewingVoice(null);
-            setPreviewStatus(null);
-            audioRef.current = null;
-          };
-          await audio.play();
-          setPreviewingVoice(voice.value);
-          setPreviewStatus(null);
-        } else {
-          throw new Error(data.error || 'Failed to generate preview');
-        }
+      const data = await res.json();
+      if (data.success && data.audioUrl) {
+        const audio = new Audio(data.audioUrl);
+        audioRef.current = audio;
+        audio.onended = () => {
+          setPreviewingVoice(null);
+          audioRef.current = null;
+        };
+        audio.onerror = () => {
+          setPreviewingVoice(null);
+          audioRef.current = null;
+        };
+        await audio.play();
+        setPreviewingVoice(voice.value);
       }
-    } catch (err: any) {
+    } catch (err) {
       console.error('Preview failed:', err);
-      alert(`Preview failed: ${err.message || err}`);
-      setPreviewingVoice(null);
-      setPreviewStatus(null);
     } finally {
       setLoadingPreview(null);
     }
   };
 
-  const fetchEdgeVoices = async () => {
+  const fetchVoices = async () => {
     setLoading(true);
     try {
       const res = await fetch('/api/tts');
@@ -184,10 +118,10 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
           gender: v.Gender,
           engine: 'edge',
         }));
-        setEdgeVoices(formatted);
+        setVoices(formatted);
       }
     } catch (err) {
-      console.error('Failed to fetch Edge voices:', err);
+      console.error('Failed to load voices:', err);
     } finally {
       setLoading(false);
     }
@@ -201,42 +135,14 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
       }
       setPreviewingVoice(null);
       setLoadingPreview(null);
-      setPreviewStatus(null);
       return;
     }
-    if (edgeVoices.length === 0) {
-      fetchEdgeVoices();
+    if (voices.length === 0) {
+      fetchVoices();
     }
-  }, [isOpen, edgeVoices.length]);
+  }, [isOpen, voices.length]);
 
   if (!isOpen) return null;
-
-  // Format Kokoro voices as VoiceOptions
-  const kokoroVoiceOptions: VoiceOption[] = KOKORO_VOICES.map(k => ({
-    value: k.id,
-    label: k.name,
-    locale: k.language,
-    localeName: k.language,
-    gender: k.gender,
-    engine: 'kokoro',
-  }));
-
-  // Format Piper voices as VoiceOptions
-  const piperVoiceOptions: VoiceOption[] = PIPER_VOICES.map(p => ({
-    value: p.id,
-    label: p.name,
-    locale: p.language,
-    localeName: p.language,
-    gender: p.gender,
-    engine: 'piper',
-  }));
-
-  const currentVoicesPool =
-    activeEngine === 'edge'
-      ? edgeVoices
-      : activeEngine === 'kokoro'
-      ? kokoroVoiceOptions
-      : piperVoiceOptions;
 
   const parseLocaleName = (localeName: string) => {
     const parts = localeName.split('(');
@@ -246,10 +152,10 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
   };
 
   const uniqueLanguages = Array.from(
-    new Set(currentVoicesPool.map(v => parseLocaleName(v.localeName || '').lang))
+    new Set(voices.map(v => parseLocaleName(v.localeName || '').lang))
   ).filter(Boolean).sort();
 
-  const filteredVoices = currentVoicesPool.filter(v => {
+  const filteredVoices = voices.filter(v => {
     const { lang } = parseLocaleName(v.localeName || '');
     const matchesSearch =
       v.label.toLowerCase().includes(search.toLowerCase()) || 
@@ -268,13 +174,13 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-800">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+            <div className="w-8 h-8 rounded-lg bg-orange-50 dark:bg-orange-950 flex items-center justify-center text-orange-600 dark:text-orange-400">
               <Volume2 className="w-4 h-4" />
             </div>
             <div>
               <h2 className="text-base font-bold text-gray-900 dark:text-white">Choose Voice</h2>
               <p className="text-xs text-gray-500 dark:text-gray-400">
-                Select between Microsoft Edge Cloud, Kokoro AI, or Piper WASM engines.
+                Over 300 natural AI voices across 50+ languages with instant 1-second preview
               </p>
             </div>
           </div>
@@ -287,56 +193,6 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
           </button>
         </div>
 
-        {/* Engine Tabs */}
-        <div className="flex border-b border-gray-200 dark:border-gray-800 px-6 bg-gray-50/50 dark:bg-[#141414]">
-          <button
-            type="button"
-            onClick={() => { setActiveEngine('edge'); clearFilters(); }}
-            className={`px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
-              activeEngine === 'edge'
-                ? 'border-gray-900 dark:border-white text-gray-900 dark:text-white'
-                : 'border-transparent text-gray-500 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            Microsoft Edge
-            <span className="text-[11px] font-normal px-2 py-0.5 rounded-full bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300">
-              300+ Voices
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { setActiveEngine('kokoro'); clearFilters(); }}
-            className={`px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
-              activeEngine === 'kokoro'
-                ? 'border-orange-500 text-orange-600 dark:text-orange-400'
-                : 'border-transparent text-gray-500 hover:text-orange-600 dark:hover:text-orange-400'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-orange-500" />
-            Kokoro AI
-            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-950/60 text-orange-700 dark:text-orange-300">
-              Studio Quality
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { setActiveEngine('piper'); clearFilters(); }}
-            className={`px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors cursor-pointer ${
-              activeEngine === 'piper'
-                ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-gray-500 hover:text-indigo-600 dark:hover:text-indigo-400'
-            }`}
-          >
-            <Cpu className="w-3.5 h-3.5 text-indigo-500" />
-            Piper TTS
-            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300">
-              Fast WASM
-            </span>
-          </button>
-        </div>
-
         {/* Toolbar */}
         <div className="px-6 py-3.5 flex flex-col gap-3 border-b border-gray-100 dark:border-gray-800/80 bg-gray-50/40 dark:bg-[#141414]">
           <div className="flex gap-2 sm:gap-3">
@@ -344,7 +200,7 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
-                placeholder={`Search ${activeEngine === 'edge' ? 'Edge' : activeEngine === 'kokoro' ? 'Kokoro AI' : 'Piper'} voices...`}
+                placeholder="Search by voice name, language or accent..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 bg-white dark:bg-[#1a1a1a] border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:border-gray-900 dark:focus:border-white shadow-2xs"
@@ -377,16 +233,14 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
               <Star className={`w-4 h-4 ${showFavoritesOnly ? 'fill-current text-amber-400 dark:text-amber-500' : ''}`} />
             </button>
 
-            {activeEngine === 'edge' && (
-              <button 
-                type="button"
-                onClick={() => fetchEdgeVoices()}
-                className="flex items-center justify-center w-9 h-9 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] hover:bg-gray-50 transition-colors cursor-pointer"
-                title="Reload voices"
-              >
-                <RotateCw className="w-3.5 h-3.5" />
-              </button>
-            )}
+            <button 
+              type="button"
+              onClick={() => fetchVoices()}
+              className="flex items-center justify-center w-9 h-9 text-gray-500 hover:text-gray-900 dark:hover:text-white rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#1a1a1a] hover:bg-gray-50 transition-colors cursor-pointer"
+              title="Reload voices"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+            </button>
           </div>
 
           {/* Expanded Filters */}
@@ -426,7 +280,7 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
           <div className="flex items-center justify-between text-xs text-gray-400 px-1">
             <span className="flex items-center gap-1.5">
               <Filter className="w-3 h-3" />
-              Showing {filteredVoices.length} voices ({activeEngine.toUpperCase()})
+              Showing {filteredVoices.length} voices
             </span>
             {(genderFilter !== 'All' || languageFilter !== 'All' || search || showFavoritesOnly) && (
               <button 
@@ -442,7 +296,7 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
 
         {/* Voice List */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-white dark:bg-[#111]">
-          {loading && activeEngine === 'edge' && edgeVoices.length === 0 ? (
+          {loading && voices.length === 0 ? (
             <div className="flex items-center justify-center py-20 text-gray-400 text-sm">
               Loading voices...
             </div>
@@ -470,29 +324,12 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
                     }`}
                   >
                     <div className="flex flex-col overflow-hidden pr-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-semibold text-gray-900 dark:text-white text-xs truncate">
-                          {voice.label}
-                        </span>
-                        {voice.engine === 'kokoro' && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-orange-100 dark:bg-orange-950 text-orange-600 dark:text-orange-400">
-                            AI
-                          </span>
-                        )}
-                        {voice.engine === 'piper' && (
-                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400">
-                            WASM
-                          </span>
-                        )}
-                      </div>
+                      <span className="font-semibold text-gray-900 dark:text-white text-xs truncate">
+                        {voice.label}
+                      </span>
                       <span className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">
                         {lang} {country !== 'Global' ? `• ${country}` : ''} • {voice.gender}
                       </span>
-                      {isLoadingPreview && previewStatus && (
-                        <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-medium truncate mt-0.5 animate-pulse">
-                          {previewStatus}
-                        </span>
-                      )}
                     </div>
                     
                     <div className="flex items-center gap-1 shrink-0">
@@ -504,7 +341,7 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
                         }}
                         className={`p-2 rounded-lg transition-colors cursor-pointer ${
                           isPlaying || isLoadingPreview 
-                            ? 'bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white' 
+                            ? 'bg-orange-500 text-white dark:bg-orange-500 dark:text-white' 
                             : 'text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-700'
                         }`}
                         title={isPlaying ? "Stop preview" : "Preview voice"}

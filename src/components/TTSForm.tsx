@@ -8,8 +8,6 @@ import { VoiceOption } from '@/types/tts';
 import { ArrowRight, Loader2, Sparkles, BookA, Clock, Users, User } from 'lucide-react';
 import HistoryList, { PendingGeneration } from '@/components/HistoryList';
 import PronunciationModal, { getLocalPronunciations, applyPronunciations } from '@/components/PronunciationModal';
-import { generateKokoroAudio } from '@/lib/kokoro-engine';
-import { generatePiperAudio } from '@/lib/piper-engine';
 
 const PRESET_VOICES: VoiceOption[] = [
   { value: 'en-US-AriaNeural', label: 'Aria Multilingual', locale: 'en-US', localeName: 'English (United States)', gender: 'Female', engine: 'edge' },
@@ -240,9 +238,9 @@ export default function TTSForm() {
         for (let i = 0; i < turns.length; i++) {
           const turn = turns[i];
           const speakerName = turn.speaker || 'Narrator';
-          const speakerVoiceObj = (turn.speaker && speakerMappings[turn.speaker]) 
-            ? speakerMappings[turn.speaker] 
-            : selectedVoiceObj;
+          const speakerVoice = (turn.speaker && speakerMappings[turn.speaker]) 
+            ? speakerMappings[turn.speaker].value 
+            : voiceShortName;
 
           const processedTurnText = applyPronunciations(turn.text, rules);
           const progressPct = Math.round(((i + 1) / turns.length) * 90);
@@ -254,61 +252,42 @@ export default function TTSForm() {
             statusText: `Synthesizing line ${i + 1} of ${turns.length} (${speakerName})...`,
           });
 
-          let chunkBlob: Blob;
-          let chunkDurationSec = 0;
+          const res = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text: processedTurnText,
+              voice: speakerVoice,
+              rate: rateStr,
+              pitch: pitchStr,
+              volume: '+0%',
+              style: emotion,
+            }),
+          });
 
-          if (speakerVoiceObj.engine === 'kokoro') {
-            const res = await generateKokoroAudio(processedTurnText, speakerVoiceObj.value, speed, (pct, status) => {
-              setPending(prev => prev ? { ...prev, progress: progressPct, statusText: `[${speakerName}] ${status}` } : null);
-            });
-            const resp = await fetch(res.audioUrl);
-            chunkBlob = await resp.blob();
-            chunkDurationSec = res.duration;
-          } else if (speakerVoiceObj.engine === 'piper') {
-            const res = await generatePiperAudio(processedTurnText, speakerVoiceObj.value, (pct, status) => {
-              setPending(prev => prev ? { ...prev, progress: progressPct, statusText: `[${speakerName}] ${status}` } : null);
-            });
-            const resp = await fetch(res.audioUrl);
-            chunkBlob = await resp.blob();
-            chunkDurationSec = await getAudioBlobDuration(chunkBlob);
-          } else {
-            const res = await fetch('/api/tts', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                text: processedTurnText,
-                voice: speakerVoiceObj.value,
-                rate: rateStr,
-                pitch: pitchStr,
-                volume: '+0%',
-                style: emotion,
-              }),
-            });
+          const data = await res.json();
+          if (!data.success || !data.audioUrl) {
+            throw new Error(data.error || `Failed to synthesize dialogue line ${i + 1}`);
+          }
 
-            const data = await res.json();
-            if (!data.success || !data.audioUrl) {
-              throw new Error(data.error || `Failed to synthesize dialogue line ${i + 1}`);
-            }
+          const base64Data = data.audioUrl.replace(/^data:audio\/\w+;base64,/, '');
+          const chunkBlob = base64ToBlob(base64Data, 'audio/mp3');
+          audioBlobs.push(chunkBlob);
 
-            const base64Data = data.audioUrl.replace(/^data:audio\/\w+;base64,/, '');
-            chunkBlob = base64ToBlob(base64Data, 'audio/mp3');
+          let chunkDurationSec = await getAudioBlobDuration(chunkBlob);
+          const chunkDurationMs = chunkDurationSec > 0 ? Math.round(chunkDurationSec * 1000) : 0;
 
-            chunkDurationSec = await getAudioBlobDuration(chunkBlob);
-            const chunkDurationMs = chunkDurationSec > 0 ? Math.round(chunkDurationSec * 1000) : 0;
-
-            if (data.srt) {
-              const shiftRes = shiftSrt(data.srt, cumulativeOffsetMs, cueIndex);
-              if (shiftRes.shiftedSrt) {
-                combinedSrt += (combinedSrt ? '\n\n' : '') + shiftRes.shiftedSrt;
-                cueIndex = shiftRes.nextCueIndex;
-                if (chunkDurationMs === 0 && shiftRes.maxEndMs > cumulativeOffsetMs) {
-                  chunkDurationSec = (shiftRes.maxEndMs - cumulativeOffsetMs) / 1000;
-                }
+          if (data.srt) {
+            const shiftRes = shiftSrt(data.srt, cumulativeOffsetMs, cueIndex);
+            if (shiftRes.shiftedSrt) {
+              combinedSrt += (combinedSrt ? '\n\n' : '') + shiftRes.shiftedSrt;
+              cueIndex = shiftRes.nextCueIndex;
+              if (chunkDurationMs === 0 && shiftRes.maxEndMs > cumulativeOffsetMs) {
+                chunkDurationSec = (shiftRes.maxEndMs - cumulativeOffsetMs) / 1000;
               }
             }
           }
 
-          audioBlobs.push(chunkBlob);
           cumulativeOffsetMs += Math.round(chunkDurationSec * 1000) || 1500;
         }
 
@@ -326,7 +305,7 @@ export default function TTSForm() {
           audioUrl: finalAudioUrl,
           srt: combinedSrt,
           date: new Date().toISOString(),
-          engine: 'multi',
+          engine: 'edge',
         };
 
         if (typeof window !== 'undefined') {
@@ -350,50 +329,23 @@ export default function TTSForm() {
         });
 
         const processedScript = applyPronunciations(text, rules);
-        let finalAudioUrl = '';
-        let srtOutput = '';
 
-        if (selectedVoiceObj.engine === 'kokoro') {
-          const res = await generateKokoroAudio(processedScript, selectedVoiceObj.value, speed, (pct, status) => {
-            setPending({
-              text: text.slice(0, 100) + (text.length > 100 ? '...' : ''),
-              voiceName: voiceNameDisplay,
-              progress: pct,
-              statusText: status,
-            });
-          });
-          finalAudioUrl = res.audioUrl;
-        } else if (selectedVoiceObj.engine === 'piper') {
-          const res = await generatePiperAudio(processedScript, selectedVoiceObj.value, (pct, status) => {
-            setPending({
-              text: text.slice(0, 100) + (text.length > 100 ? '...' : ''),
-              voiceName: voiceNameDisplay,
-              progress: pct,
-              statusText: status,
-            });
-          });
-          finalAudioUrl = res.audioUrl;
-        } else {
-          const res = await fetch('/api/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: processedScript,
-              voice: voiceShortName,
-              rate: rateStr,
-              pitch: pitchStr,
-              volume: '+0%',
-              style: emotion,
-            }),
-          });
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: processedScript,
+            voice: voiceShortName,
+            rate: rateStr,
+            pitch: pitchStr,
+            volume: '+0%',
+            style: emotion,
+          }),
+        });
 
-          const data = await res.json();
-          if (!data.success || !data.audioUrl) {
-            throw new Error(data.error || 'Failed to generate audio.');
-          }
-
-          finalAudioUrl = data.audioUrl;
-          srtOutput = data.srt || '';
+        const data = await res.json();
+        if (!data.success || !data.audioUrl) {
+          throw new Error(data.error || 'Failed to generate audio.');
         }
 
         const newHistoryItem = {
@@ -401,10 +353,10 @@ export default function TTSForm() {
           title: 'Generated Audio',
           text: text,
           voiceName: voiceNameDisplay,
-          audioUrl: finalAudioUrl,
-          srt: srtOutput,
+          audioUrl: data.audioUrl,
+          srt: data.srt || '',
           date: new Date().toISOString(),
-          engine: selectedVoiceObj.engine || 'edge',
+          engine: 'edge',
         };
 
         if (typeof window !== 'undefined') {
