@@ -8,14 +8,6 @@ import { VoiceOption } from '@/types/tts';
 import { ArrowRight, Loader2, Sparkles, BookA, Clock, Users, User } from 'lucide-react';
 import HistoryList, { PendingGeneration } from '@/components/HistoryList';
 import PronunciationModal, { getLocalPronunciations, applyPronunciations } from '@/components/PronunciationModal';
-import { chunkSpeechText, parsePauses } from '@/lib/chunker';
-import {
-  decodeAudio,
-  createSilence,
-  combineAudioBuffers,
-  audioBufferToDataUri,
-  stitchSrtSegments,
-} from '@/lib/audio-utils';
 
 const PRESET_VOICES: VoiceOption[] = [
   { value: 'en-US-AriaNeural', label: 'Aria Multilingual', locale: 'en-US', localeName: 'English (United States)', gender: 'Female', engine: 'edge' },
@@ -42,22 +34,6 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     reader.onloadend = () => resolve(reader.result as string);
     reader.onerror = reject;
     reader.readAsDataURL(blob);
-  });
-}
-
-function getAudioBlobDuration(blob: Blob): Promise<number> {
-  return new Promise((resolve) => {
-    const url = URL.createObjectURL(blob);
-    const audio = new Audio(url);
-    audio.onloadedmetadata = () => {
-      const dur = audio.duration;
-      URL.revokeObjectURL(url);
-      resolve(isNaN(dur) || !isFinite(dur) ? 0 : dur);
-    };
-    audio.onerror = () => {
-      URL.revokeObjectURL(url);
-      resolve(0);
-    };
   });
 }
 
@@ -120,7 +96,7 @@ function saveHistoryItem(item: any) {
       }
     }
   } catch (err) {
-    console.warn('Storage error:', err);
+    console.warn('Storage warning:', err);
   }
 }
 
@@ -258,134 +234,32 @@ export default function TTSForm() {
           throw new Error('Please enter dialogue lines or click a template.');
         }
 
-        interface DialogueTask {
-          type: 'speech' | 'pause';
-          speaker: string;
-          voice: string;
-          text?: string;
-          durationMs?: number;
-        }
-        const tasks: DialogueTask[] = [];
+        const audioBlobs: Blob[] = [];
+        let combinedSrt = '';
+        let cumulativeOffsetMs = 0;
+        let cueIndex = 1;
 
-        for (const turn of turns) {
+        for (let i = 0; i < turns.length; i++) {
+          const turn = turns[i];
           const speakerName = turn.speaker || 'Narrator';
           const speakerVoice = (turn.speaker && speakerMappings[turn.speaker])
             ? speakerMappings[turn.speaker].value
             : voiceShortName;
 
-          const segments = parsePauses(turn.text);
-          for (const seg of segments) {
-            if (seg.type === 'pause' && seg.durationMs) {
-              tasks.push({ type: 'pause', speaker: speakerName, voice: speakerVoice, durationMs: seg.durationMs });
-            } else if (seg.type === 'speech' && seg.text) {
-              const chunks = chunkSpeechText(seg.text, 450);
-              for (const ch of chunks) {
-                tasks.push({ type: 'speech', speaker: speakerName, voice: speakerVoice, text: ch });
-              }
-            }
-          }
-        }
-
-        const audioBuffers: AudioBuffer[] = [];
-        const srtSegments: { srt: string; durationSec: number }[] = [];
-        const speechTasks = tasks.filter(t => t.type === 'speech');
-        let speechIdx = 0;
-
-        for (let i = 0; i < tasks.length; i++) {
-          const task = tasks[i];
-          if (task.type === 'pause' && task.durationMs) {
-            const silenceBuf = createSilence(task.durationMs);
-            audioBuffers.push(silenceBuf);
-            srtSegments.push({ srt: '', durationSec: silenceBuf.duration });
-          } else if (task.type === 'speech' && task.text) {
-            speechIdx++;
-            const progressPct = Math.round((speechIdx / speechTasks.length) * 85);
-            setPending({
-              text: `[${task.speaker}]: ${task.text.slice(0, 70)}...`,
-              voiceName: task.speaker,
-              progress: progressPct,
-              statusText: `Synthesizing part ${speechIdx} of ${speechTasks.length} (${task.speaker})...`,
-            });
-
-            const res = await fetch('/api/tts', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                text: task.text,
-                voice: task.voice,
-                rate: rateStr,
-                pitch: pitchStr,
-                volume: '+0%',
-                style: emotion,
-              }),
-            });
-
-            const data = await res.json();
-            if (!data.success || !data.audioUrl) {
-              throw new Error(data.error || `Failed to synthesize dialogue part ${speechIdx}`);
-            }
-
-            const buf = await decodeAudio(data.audioUrl);
-            audioBuffers.push(buf);
-            srtSegments.push({ srt: data.srt || '', durationSec: buf.duration });
-          }
-        }
-
-        setPending(prev => prev ? { ...prev, progress: 95, statusText: 'Stitching dialogue audio...' } : null);
-
-        const finalBuffer = combineAudioBuffers(audioBuffers);
-        const finalAudioUrl = await audioBufferToDataUri(finalBuffer);
-        const finalSrt = stitchSrtSegments(srtSegments);
-
-        saveHistoryItem({
-          id: Date.now().toString(),
-          title: `Dialogue (${turns.length} lines)`,
-          text: text,
-          voiceName: `Multi-Speaker (${detectedSpeakers.length || 1} voices)`,
-          audioUrl: finalAudioUrl,
-          srt: finalSrt,
-          date: new Date().toISOString(),
-          engine: 'edge',
-        });
-
-        window.dispatchEvent(new Event('tts_history_updated'));
-      } else {
-        // Standard Single-Voice Mode with Sentence Chunking & Pauses
-        const segments = parsePauses(processedScript);
-
-        interface ChunkItem {
-          type: 'speech' | 'pause';
-          text?: string;
-          durationMs?: number;
-        }
-        const tasks: ChunkItem[] = [];
-
-        for (const seg of segments) {
-          if (seg.type === 'pause' && seg.durationMs) {
-            tasks.push({ type: 'pause', durationMs: seg.durationMs });
-          } else if (seg.type === 'speech' && seg.text) {
-            const chunks = chunkSpeechText(seg.text, 450);
-            for (const ch of chunks) {
-              tasks.push({ type: 'speech', text: ch });
-            }
-          }
-        }
-
-        // Fast path: if there is only 1 speech chunk and no pauses
-        if (tasks.length === 1 && tasks[0].type === 'speech') {
+          const progressPct = Math.round(((i + 1) / turns.length) * 85);
           setPending({
-            text: text.slice(0, 100) + (text.length > 100 ? '...' : ''),
-            voiceName: voiceNameDisplay,
-            progress: 35,
-            statusText: 'Synthesizing audio...',
+            text: `[${speakerName}]: ${turn.text.slice(0, 70)}...`,
+            voiceName: speakerName,
+            progress: progressPct,
+            statusText: `Synthesizing line ${i + 1} of ${turns.length} (${speakerName})...`,
           });
 
           const res = await fetch('/api/tts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              text: tasks[0].text,
-              voice: voiceShortName,
+              text: turn.text,
+              voice: speakerVoice,
               rate: rateStr,
               pitch: pitchStr,
               volume: '+0%',
@@ -395,8 +269,83 @@ export default function TTSForm() {
 
           const data = await res.json();
           if (!data.success || !data.audioUrl) {
+            throw new Error(data.error || `Failed to synthesize line ${i + 1}`);
+          }
+
+          const base64Data = data.audioUrl.replace(/^data:audio\/\w+;base64,/, '');
+          const chunkBlob = base64ToBlob(base64Data, 'audio/mp3');
+          audioBlobs.push(chunkBlob);
+
+          let chunkDurationSec = 0;
+          if (data.srt) {
+            const shiftRes = shiftSrt(data.srt, cumulativeOffsetMs, cueIndex);
+            if (shiftRes.shiftedSrt) {
+              combinedSrt += (combinedSrt ? '\n\n' : '') + shiftRes.shiftedSrt;
+              cueIndex = shiftRes.nextCueIndex;
+              if (shiftRes.maxEndMs > cumulativeOffsetMs) {
+                chunkDurationSec = (shiftRes.maxEndMs - cumulativeOffsetMs) / 1000;
+              }
+            }
+          }
+
+          cumulativeOffsetMs += Math.round(chunkDurationSec * 1000) || 2000;
+        }
+
+        setPending(prev => prev ? { ...prev, progress: 95, statusText: 'Finalizing dialogue...' } : null);
+
+        const combinedBlob = new Blob(audioBlobs, { type: 'audio/mp3' });
+        const finalAudioUrl = await blobToDataUrl(combinedBlob);
+
+        saveHistoryItem({
+          id: Date.now().toString(),
+          title: `Dialogue (${turns.length} lines)`,
+          text: text,
+          voiceName: `Multi-Speaker (${detectedSpeakers.length || 1} voices)`,
+          audioUrl: finalAudioUrl,
+          srt: combinedSrt,
+          date: new Date().toISOString(),
+          engine: 'edge',
+        });
+
+        window.dispatchEvent(new Event('tts_history_updated'));
+        window.dispatchEvent(new Event('storage'));
+      } else {
+        // Standard Single-Voice Direct Generation (No Chunking)
+        let simulatedProgress = 10;
+        setPending({
+          text: text.slice(0, 100) + (text.length > 100 ? '...' : ''),
+          voiceName: voiceNameDisplay,
+          progress: simulatedProgress,
+          statusText: 'Synthesizing audio...',
+        });
+
+        const progressInterval = setInterval(() => {
+          simulatedProgress = Math.min(simulatedProgress + 12, 90);
+          setPending(prev => prev ? { ...prev, progress: simulatedProgress } : null);
+        }, 300);
+
+        try {
+          const res = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text: processedScript,
+              voice: voiceShortName,
+              rate: rateStr,
+              pitch: pitchStr,
+              volume: '+0%',
+              style: emotion,
+            }),
+          });
+
+          const data = await res.json();
+          clearInterval(progressInterval);
+
+          if (!data.success || !data.audioUrl) {
             throw new Error(data.error || 'Failed to generate audio.');
           }
+
+          setPending(prev => prev ? { ...prev, progress: 100, statusText: 'Ready!' } : null);
 
           saveHistoryItem({
             id: Date.now().toString(),
@@ -410,71 +359,10 @@ export default function TTSForm() {
           });
 
           window.dispatchEvent(new Event('tts_history_updated'));
-        } else {
-          // Multi-chunk / Pause processing (Prevents Vercel 10s timeouts)
-          const audioBuffers: AudioBuffer[] = [];
-          const srtSegments: { srt: string; durationSec: number }[] = [];
-          const speechTasks = tasks.filter(t => t.type === 'speech');
-          let speechIdx = 0;
-
-          for (let i = 0; i < tasks.length; i++) {
-            const task = tasks[i];
-            if (task.type === 'pause' && task.durationMs) {
-              const silenceBuf = createSilence(task.durationMs);
-              audioBuffers.push(silenceBuf);
-              srtSegments.push({ srt: '', durationSec: silenceBuf.duration });
-            } else if (task.type === 'speech' && task.text) {
-              speechIdx++;
-              const progressPct = Math.round((speechIdx / speechTasks.length) * 85);
-              setPending({
-                text: `${task.text.slice(0, 80)}...`,
-                voiceName: voiceNameDisplay,
-                progress: progressPct,
-                statusText: `Synthesizing part ${speechIdx} of ${speechTasks.length}...`,
-              });
-
-              const res = await fetch('/api/tts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  text: task.text,
-                  voice: voiceShortName,
-                  rate: rateStr,
-                  pitch: pitchStr,
-                  volume: '+0%',
-                  style: emotion,
-                }),
-              });
-
-              const data = await res.json();
-              if (!data.success || !data.audioUrl) {
-                throw new Error(data.error || `Failed to synthesize part ${speechIdx}`);
-              }
-
-              const buf = await decodeAudio(data.audioUrl);
-              audioBuffers.push(buf);
-              srtSegments.push({ srt: data.srt || '', durationSec: buf.duration });
-            }
-          }
-
-          setPending(prev => prev ? { ...prev, progress: 95, statusText: 'Stitching audio & subtitles...' } : null);
-
-          const finalBuffer = combineAudioBuffers(audioBuffers);
-          const finalAudioUrl = await audioBufferToDataUri(finalBuffer);
-          const finalSrt = stitchSrtSegments(srtSegments);
-
-          saveHistoryItem({
-            id: Date.now().toString(),
-            title: 'Generated Audio',
-            text: text,
-            voiceName: voiceNameDisplay,
-            audioUrl: finalAudioUrl,
-            srt: finalSrt,
-            date: new Date().toISOString(),
-            engine: 'edge',
-          });
-
-          window.dispatchEvent(new Event('tts_history_updated'));
+          window.dispatchEvent(new Event('storage'));
+        } catch (fetchErr) {
+          clearInterval(progressInterval);
+          throw fetchErr;
         }
       }
     } catch (err: any) {
