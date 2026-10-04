@@ -46,4 +46,5 @@ export interface VoiceOption {
   locale: string;
   localeName?: string; // e.g., "English (United States)"
   gender: string;
+  engine?: 'edge' | 'kokoro' | 'piper';
 }
