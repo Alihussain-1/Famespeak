@@ -50,7 +50,7 @@ export default function HistoryList({ pending }: HistoryListProps) {
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const loadItems = useCallback(() => {
+  const loadItems = useCallback((selectLatest = false) => {
     if (typeof window === 'undefined') return;
     try {
       const saved = localStorage.getItem('tts_history');
@@ -58,7 +58,7 @@ export default function HistoryList({ pending }: HistoryListProps) {
         const items = JSON.parse(saved);
         if (Array.isArray(items)) {
           setHistory(items);
-          if (!activeWaveformId && items.length > 0) {
+          if (items.length > 0 && (selectLatest || !activeWaveformId)) {
             setActiveWaveformId(items[0].id);
           }
           return;
@@ -71,7 +71,7 @@ export default function HistoryList({ pending }: HistoryListProps) {
   useEffect(() => {
     loadItems();
 
-    const handleStorage = () => loadItems();
+    const handleStorage = () => loadItems(true);
     window.addEventListener('storage', handleStorage);
     window.addEventListener('tts_history_updated', handleStorage);
     return () => {
@@ -82,7 +82,7 @@ export default function HistoryList({ pending }: HistoryListProps) {
 
   useEffect(() => {
     if (!pending) {
-      loadItems();
+      loadItems(true);
     }
   }, [pending, loadItems]);
 
