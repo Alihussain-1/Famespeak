@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Square, Edit2, Check, Loader2, Download, FileAudio, FileText, Activity, Trash2 } from 'lucide-react';
 import WaveformPlayer from './WaveformPlayer';
 
@@ -50,7 +50,7 @@ export default function HistoryList({ pending }: HistoryListProps) {
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const loadItems = () => {
+  const loadItems = useCallback(() => {
     if (typeof window === 'undefined') return;
     try {
       const saved = localStorage.getItem('tts_history');
@@ -66,7 +66,7 @@ export default function HistoryList({ pending }: HistoryListProps) {
       }
     } catch (e) {}
     setHistory([]);
-  };
+  }, [activeWaveformId]);
 
   useEffect(() => {
     loadItems();
@@ -78,13 +78,13 @@ export default function HistoryList({ pending }: HistoryListProps) {
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('tts_history_updated', handleStorage);
     };
-  }, []);
+  }, [loadItems]);
 
   useEffect(() => {
     if (!pending) {
       loadItems();
     }
-  }, [pending]);
+  }, [pending, loadItems]);
 
   useEffect(() => {
     if (!menuId) return;

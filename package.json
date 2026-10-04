@@ -10,10 +10,6 @@
   },
   "dependencies": {
     "@andresaya/edge-tts": "^1.8.1",
-    "@breezystack/lamejs": "^1.2.7",
-    "@mintplex-labs/piper-tts-web": "^1.0.5",
-    "idb-keyval": "^6.3.0",
-    "kokoro-js": "^1.2.1",
     "lucide-react": "^1.48.0",
     "next": "14.2.5",
     "next-themes": "^0.4.6",
