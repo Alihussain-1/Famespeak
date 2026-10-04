@@ -11,6 +11,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { generateAudio, fetchVoices, EdgeTTSError, isValidRate, isValidPitch, isValidVolume } from '@/lib/edge-tts';
 import { TTSRequest, TTSApiResponse } from '@/types/tts';
 
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
 // ─── POST /api/tts ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest): Promise<NextResponse<TTSApiResponse>> {

@@ -125,7 +125,7 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
     if (voices.length === 0) {
       fetchVoices();
     }
-  }, [isOpen]);
+  }, [isOpen, voices.length]);
 
   if (!isOpen) return null;
 
