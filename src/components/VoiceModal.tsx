@@ -5,7 +5,6 @@ import { VoiceOption } from '@/types/tts';
 import { Search, X, Play, SlidersHorizontal, Star, RotateCw, Filter, Sparkles, Cpu } from 'lucide-react';
 import { KOKORO_VOICES, generateKokoroAudio } from '@/lib/kokoro-engine';
 import { PIPER_VOICES, generatePiperAudio } from '@/lib/piper-engine';
-import { getFavorites, toggleFavoriteVoice } from '@/lib/storage';
 
 interface VoiceModalProps {
   isOpen: boolean;
@@ -33,16 +32,26 @@ export default function VoiceModal({ isOpen, onClose, selectedVoice, onSelect }:
   const [loadingPreview, setLoadingPreview] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // Load favorites from IndexedDB
+  // Load favorites from localStorage
   useEffect(() => {
-    if (isOpen) {
-      getFavorites().then(setFavorites);
+    if (isOpen && typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('tts_favorites');
+        if (saved) setFavorites(JSON.parse(saved));
+      } catch (e) {}
     }
   }, [isOpen]);
 
-  const handleToggleFavorite = async (voiceId: string) => {
-    const updated = await toggleFavoriteVoice(voiceId);
+  const handleToggleFavorite = (voiceId: string) => {
+    const updated = favorites.includes(voiceId)
+      ? favorites.filter(id => id !== voiceId)
+      : [...favorites, voiceId];
     setFavorites(updated);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('tts_favorites', JSON.stringify(updated));
+      } catch (e) {}
+    }
   };
 
   const clearFilters = () => {

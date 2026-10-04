@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Play, Pause, Volume2, VolumeX, Download, FileText, FileAudio, RotateCcw } from 'lucide-react';
 import WaveSurfer from 'wavesurfer.js';
-import { formatSrtTime } from '@/lib/audio-utils';
 
 interface WaveformPlayerProps {
   audioUrl: string;

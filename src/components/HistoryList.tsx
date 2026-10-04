@@ -2,8 +2,19 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { Play, Square, Edit2, Check, Loader2, Download, FileAudio, FileText, Activity, Trash2 } from 'lucide-react';
-import { HistoryItem, getHistory, deleteHistoryItem, updateHistoryItem, clearHistory } from '@/lib/storage';
 import WaveformPlayer from './WaveformPlayer';
+
+export interface HistoryItem {
+  id: string;
+  title?: string;
+  text: string;
+  voiceName: string;
+  audioUrl: string;
+  srt?: string;
+  date: string;
+  duration?: number;
+  engine?: string;
+}
 
 export interface PendingGeneration {
   progress?: number;
@@ -27,7 +38,6 @@ function triggerDownload(href: string, fileName: string) {
 
 interface HistoryListProps {
   pending?: PendingGeneration | null;
-  onRefreshRequest?: () => void;
 }
 
 export default function HistoryList({ pending }: HistoryListProps) {
@@ -40,12 +50,22 @@ export default function HistoryList({ pending }: HistoryListProps) {
   
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  const loadItems = async () => {
-    const items = await getHistory();
-    setHistory(items);
-    if (!activeWaveformId && items.length > 0) {
-      setActiveWaveformId(items[0].id);
-    }
+  const loadItems = () => {
+    if (typeof window === 'undefined') return;
+    try {
+      const saved = localStorage.getItem('tts_history');
+      if (saved) {
+        const items = JSON.parse(saved);
+        if (Array.isArray(items)) {
+          setHistory(items);
+          if (!activeWaveformId && items.length > 0) {
+            setActiveWaveformId(items[0].id);
+          }
+          return;
+        }
+      }
+    } catch (e) {}
+    setHistory([]);
   };
 
   useEffect(() => {
@@ -60,14 +80,12 @@ export default function HistoryList({ pending }: HistoryListProps) {
     };
   }, []);
 
-  // When pending transitions to null (generation finished), reload
   useEffect(() => {
     if (!pending) {
       loadItems();
     }
   }, [pending]);
 
-  // Close the download menu when clicking anywhere else
   useEffect(() => {
     if (!menuId) return;
     const close = () => setMenuId(null);
@@ -96,18 +114,20 @@ export default function HistoryList({ pending }: HistoryListProps) {
     audio.onended = () => setPlayingId(null);
   };
 
-  const handleClearHistory = async () => {
+  const handleClearHistory = () => {
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
     }
     setPlayingId(null);
     setActiveWaveformId(null);
-    await clearHistory();
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('tts_history');
+    }
     setHistory([]);
   };
 
-  const handleDeleteItem = async (id: string, e: React.MouseEvent) => {
+  const handleDeleteItem = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (playingId === id && audioRef.current) {
       audioRef.current.pause();
@@ -116,13 +136,19 @@ export default function HistoryList({ pending }: HistoryListProps) {
     if (activeWaveformId === id) {
       setActiveWaveformId(null);
     }
-    await deleteHistoryItem(id);
-    setHistory(prev => prev.filter(item => item.id !== id));
+    const updated = history.filter(item => item.id !== id);
+    setHistory(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('tts_history', JSON.stringify(updated));
+    }
   };
 
-  const saveTitle = async (id: string) => {
-    await updateHistoryItem(id, { title: editTitle });
-    setHistory(prev => prev.map(item => item.id === id ? { ...item, title: editTitle } : item));
+  const saveTitle = (id: string) => {
+    const updated = history.map(item => item.id === id ? { ...item, title: editTitle } : item);
+    setHistory(updated);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('tts_history', JSON.stringify(updated));
+    }
     setEditingId(null);
   };
 
@@ -154,7 +180,7 @@ export default function HistoryList({ pending }: HistoryListProps) {
 
   return (
     <div className="flex flex-col h-full gap-4">
-      {/* Active Waveform Player (ElevenLabs style) */}
+      {/* Active Waveform Player */}
       {activeWaveformItem && (
         <div className="shrink-0 animate-in fade-in duration-200">
           <WaveformPlayer
@@ -212,7 +238,6 @@ export default function HistoryList({ pending }: HistoryListProps) {
           {history.length === 0 && !pending ? (
             <div className="flex flex-col items-center justify-center p-12 text-gray-400 text-center">
               <p className="text-sm">Generated scripts will appear here.</p>
-              <p className="text-xs text-gray-400 mt-1">Saved securely in IndexedDB without 5MB limits.</p>
             </div>
           ) : (
             history.map((item) => {

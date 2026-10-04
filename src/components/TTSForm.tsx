@@ -1,16 +1,12 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import VoiceModal from '@/components/VoiceModal';
 import CustomDropdown from '@/components/CustomDropdown';
 import { VoiceOption } from '@/types/tts';
-import { ArrowRight, Settings2, Loader2, Sparkles, BookA, Clock, Users } from 'lucide-react';
+import { ArrowRight, Loader2, Sparkles, BookA, Clock } from 'lucide-react';
 import HistoryList, { PendingGeneration } from '@/components/HistoryList';
-import PronunciationModal from '@/components/PronunciationModal';
-import MultiSpeakerPanel from '@/components/MultiSpeakerPanel';
-import { saveHistoryItem, getPronunciations, applyPronunciations } from '@/lib/storage';
-import { parsePauses, chunkSpeechText, isDialogueScript, parseDialogue, extractSpeakers } from '@/lib/chunker';
-import { decodeAudio, createSilence, combineAudioBuffers, audioBufferToDataUri, stitchSrtSegments } from '@/lib/audio-utils';
+import PronunciationModal, { getLocalPronunciations, applyPronunciations } from '@/components/PronunciationModal';
 import { generateKokoroAudio } from '@/lib/kokoro-engine';
 import { generatePiperAudio } from '@/lib/piper-engine';
 
@@ -34,10 +30,6 @@ export default function TTSForm() {
   
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
   const [isPronunciationOpen, setIsPronunciationOpen] = useState(false);
-  const [isDialogueMode, setIsDialogueMode] = useState(false);
-
-  // Multi-speaker mappings: speakerName -> VoiceOption
-  const [speakerMappings, setSpeakerMappings] = useState<Record<string, VoiceOption>>({});
 
   // Loading and Pending state for History
   const [loading, setLoading] = useState(false);
@@ -45,19 +37,6 @@ export default function TTSForm() {
 
   const [activeRightTab, setActiveRightTab] = useState<'settings' | 'history'>('settings');
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-
-  // Auto-detect dialogue format when user types or pastes
-  useEffect(() => {
-    if (isDialogueScript(text) && !isDialogueMode) {
-      setIsDialogueMode(true);
-    }
-  }, [text]);
-
-  const detectedSpeakers = extractSpeakers(text);
-
-  const handleSpeakerMappingChange = (speaker: string, voice: VoiceOption) => {
-    setSpeakerMappings(prev => ({ ...prev, [speaker]: voice }));
-  };
 
   const insertTextAtCursor = (insertion: string) => {
     const ta = textareaRef.current;
@@ -75,52 +54,6 @@ export default function TTSForm() {
     }, 10);
   };
 
-  // Helper to synthesize a single speech text chunk using the specified voice & engine
-  const synthesizeChunk = async (
-    chunkText: string,
-    voice: VoiceOption,
-    spd: number,
-    ptch: number
-  ): Promise<{ audioUrl: string; srt?: string }> => {
-    if (voice.engine === 'kokoro') {
-      const res = await generateKokoroAudio(chunkText, voice.value, spd, (pct, status) => {
-        setPending(prev => prev ? { ...prev, progress: pct, statusText: status } : null);
-      });
-      return { audioUrl: res.audioUrl, srt: '' };
-    }
-
-    if (voice.engine === 'piper') {
-      const res = await generatePiperAudio(chunkText, voice.value, (pct, status) => {
-        setPending(prev => prev ? { ...prev, progress: pct, statusText: status } : null);
-      });
-      return { audioUrl: res.audioUrl, srt: '' };
-    }
-
-    // Default: Microsoft Edge Cloud API
-    const ratePercent = Math.round((spd - 1) * 100);
-    const rateStr = ratePercent >= 0 ? `+${ratePercent}%` : `${ratePercent}%`;
-    const pitchStr = ptch >= 0 ? `+${ptch}Hz` : `${ptch}Hz`;
-
-    const res = await fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text: chunkText,
-        voice: voice.value,
-        rate: rateStr,
-        pitch: pitchStr,
-        volume: '+0%',
-        style: emotion,
-      }),
-    });
-
-    const data = await res.json();
-    if (!data.success || !data.audioUrl) {
-      throw new Error(data.error || 'Failed to synthesize chunk.');
-    }
-    return { audioUrl: data.audioUrl, srt: data.srt || '' };
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim() || loading) return;
@@ -129,123 +62,79 @@ export default function TTSForm() {
     setActiveRightTab('history');
     setPending({
       text: text.slice(0, 100) + (text.length > 100 ? '...' : ''),
-      voiceName: isDialogueMode ? 'Multi-Speaker' : voiceNameDisplay,
-      progress: 5,
-      statusText: 'Preparing script...',
+      voiceName: voiceNameDisplay,
+      progress: 25,
+      statusText: 'Generating audio...',
     });
 
     try {
-      // 1. Apply Pronunciation dictionary replacements
-      const rules = await getPronunciations();
+      // Apply Pronunciation replacements if configured
+      const rules = getLocalPronunciations();
       const processedScript = applyPronunciations(text, rules);
 
-      const audioBuffers: AudioBuffer[] = [];
-      const srtSegments: { srt: string; durationSec: number }[] = [];
+      let audioUrl = '';
+      let srt = '';
 
-      // 2. Multi-speaker dialogue synthesis vs Standard chunked synthesis
-      if (isDialogueMode && isDialogueScript(processedScript)) {
-        const dialogueTurns = parseDialogue(processedScript);
-        const totalTurns = dialogueTurns.length;
-
-        for (let i = 0; i < totalTurns; i++) {
-          const turn = dialogueTurns[i];
-          const assignedVoice = speakerMappings[turn.speaker] || selectedVoiceObj;
-
-          setPending({
-            text: `[${turn.speaker}]: ${turn.text.slice(0, 60)}...`,
-            voiceName: `${turn.speaker} (${assignedVoice.label})`,
-            progress: Math.round(((i + 1) / totalTurns) * 90),
-            statusText: `Speaking ${turn.speaker} (${i + 1} of ${totalTurns})...`,
-          });
-
-          // Handle pauses inside the line
-          const lineSegments = parsePauses(turn.text);
-          for (const seg of lineSegments) {
-            if (seg.type === 'pause' && seg.durationMs) {
-              const silence = createSilence(seg.durationMs);
-              audioBuffers.push(silence);
-              srtSegments.push({ srt: '', durationSec: seg.durationMs / 1000 });
-            } else if (seg.type === 'speech' && seg.text) {
-              const { audioUrl, srt } = await synthesizeChunk(seg.text, assignedVoice, speed, pitch);
-              const decoded = await decodeAudio(audioUrl);
-              audioBuffers.push(decoded);
-              srtSegments.push({ srt: srt || '', durationSec: decoded.duration });
-            }
-          }
-
-          // Small natural turn pause (200ms) between different speakers
-          if (i < totalTurns - 1) {
-            audioBuffers.push(createSilence(250));
-            srtSegments.push({ srt: '', durationSec: 0.25 });
-          }
-        }
+      if (selectedVoiceObj.engine === 'kokoro') {
+        const res = await generateKokoroAudio(processedScript, selectedVoiceObj.value, speed, (pct, status) => {
+          setPending(prev => prev ? { ...prev, progress: pct, statusText: status } : null);
+        });
+        audioUrl = res.audioUrl;
+      } else if (selectedVoiceObj.engine === 'piper') {
+        const res = await generatePiperAudio(processedScript, selectedVoiceObj.value, (pct, status) => {
+          setPending(prev => prev ? { ...prev, progress: pct, statusText: status } : null);
+        });
+        audioUrl = res.audioUrl;
       } else {
-        // Standard synthesis with pause parsing & smart sentence chunking (prevents Vercel timeouts!)
-        const rawSegments = parsePauses(processedScript);
-        const finalTasks: { type: 'speech' | 'pause'; text?: string; durationMs?: number }[] = [];
+        // Direct Edge Cloud API call
+        const ratePercent = Math.round((speed - 1) * 100);
+        const rateStr = ratePercent >= 0 ? `+${ratePercent}%` : `${ratePercent}%`;
+        const pitchStr = pitch >= 0 ? `+${pitch}Hz` : `${pitch}Hz`;
 
-        for (const seg of rawSegments) {
-          if (seg.type === 'pause') {
-            finalTasks.push(seg);
-          } else if (seg.type === 'speech' && seg.text) {
-            // Split long speech text into ~500 char chunks to protect against server timeouts
-            const chunks = chunkSpeechText(seg.text, 500);
-            for (const ch of chunks) {
-              finalTasks.push({ type: 'speech', text: ch });
-            }
-          }
+        const res = await fetch('/api/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: processedScript,
+            voice: voiceShortName,
+            rate: rateStr,
+            pitch: pitchStr,
+            volume: '+0%',
+            style: emotion,
+          }),
+        });
+
+        const data = await res.json();
+        if (!data.success || !data.audioUrl) {
+          throw new Error(data.error || 'Failed to generate audio.');
         }
 
-        const totalTasks = finalTasks.length;
-
-        for (let i = 0; i < totalTasks; i++) {
-          const task = finalTasks[i];
-          setPending({
-            text: task.text ? task.text.slice(0, 70) + '...' : `[Pause ${task.durationMs}ms]`,
-            voiceName: voiceNameDisplay,
-            progress: Math.round(((i + 1) / totalTasks) * 92),
-            statusText: `Synthesizing part ${i + 1} of ${totalTasks}...`,
-          });
-
-          if (task.type === 'pause' && task.durationMs) {
-            const silence = createSilence(task.durationMs);
-            audioBuffers.push(silence);
-            srtSegments.push({ srt: '', durationSec: task.durationMs / 1000 });
-          } else if (task.type === 'speech' && task.text) {
-            const { audioUrl, srt } = await synthesizeChunk(task.text, selectedVoiceObj, speed, pitch);
-            const decoded = await decodeAudio(audioUrl);
-            audioBuffers.push(decoded);
-            srtSegments.push({ srt: srt || '', durationSec: decoded.duration });
-          }
-        }
+        audioUrl = data.audioUrl;
+        srt = data.srt || '';
       }
 
-      setPending({
-        text: 'Finishing audio assembly...',
-        voiceName: voiceNameDisplay,
-        progress: 96,
-        statusText: 'Assembling audio track...',
-      });
-
-      // 3. Combine audio buffers into a single seamless audio file
-      const combined = combineAudioBuffers(audioBuffers);
-      const finalAudioUrl = await audioBufferToDataUri(combined);
-      const finalSrt = stitchSrtSegments(srtSegments);
-
-      // 4. Save to IndexedDB (no 5MB limit!)
+      // Save directly to localStorage
       const newHistoryItem = {
         id: Date.now().toString(),
-        title: isDialogueMode ? 'Dialogue Audio' : 'Generated Audio',
+        title: 'Generated Audio',
         text: text,
-        voiceName: isDialogueMode ? 'Multi-Speaker' : voiceNameDisplay,
-        audioUrl: finalAudioUrl,
-        srt: finalSrt,
+        voiceName: voiceNameDisplay,
+        audioUrl: audioUrl,
+        srt: srt,
         date: new Date().toISOString(),
-        duration: combined.duration,
         engine: selectedVoiceObj.engine,
       };
 
-      await saveHistoryItem(newHistoryItem);
+      if (typeof window !== 'undefined') {
+        try {
+          const saved = localStorage.getItem('tts_history');
+          const historyList = saved ? JSON.parse(saved) : [];
+          localStorage.setItem('tts_history', JSON.stringify([newHistoryItem, ...historyList]));
+        } catch (storageErr) {
+          console.warn('Storage full or error:', storageErr);
+        }
+      }
+
       window.dispatchEvent(new Event('tts_history_updated'));
     } catch (err: any) {
       console.error('Generation failed:', err);
@@ -278,20 +167,18 @@ export default function TTSForm() {
           <div className="flex-1 flex flex-col">
             
             {/* Script Toolbar */}
-            <div className="flex flex-wrap items-center justify-between pb-3 mb-2 border-b border-gray-100 dark:border-gray-800 gap-2">
-              <div className="flex items-center gap-1.5">
-                {/* Insert Pause Button */}
+            <div className="flex items-center justify-between pb-3 mb-2 border-b border-gray-100 dark:border-gray-800">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => insertTextAtCursor(' [pause 1s] ')}
+                  onClick={() => insertTextAtCursor(' ... ')}
                   className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#161616] hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-200 transition-colors"
-                  title="Insert a 1 second pause at cursor"
+                  title="Insert a natural pause"
                 >
                   <Clock className="w-3.5 h-3.5 text-indigo-500" />
-                  + Pause (1s)
+                  + Pause (...)
                 </button>
 
-                {/* Pronunciation Dictionary Button */}
                 <button
                   type="button"
                   onClick={() => setIsPronunciationOpen(true)}
@@ -302,42 +189,14 @@ export default function TTSForm() {
                   Pronunciations
                 </button>
               </div>
-
-              {/* Multi-speaker Dialogue Toggle */}
-              <button
-                type="button"
-                onClick={() => setIsDialogueMode(!isDialogueMode)}
-                className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${
-                  isDialogueMode
-                    ? 'bg-indigo-50 dark:bg-indigo-950/70 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
-                    : 'bg-white dark:bg-[#161616] border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50'
-                }`}
-                title="Enable dialogue mode with separate voices for each character"
-              >
-                <Users className="w-3.5 h-3.5" />
-                Dialogue Mode {isDialogueMode ? '(Active)' : ''}
-              </button>
             </div>
-
-            {/* Multi-Speaker Mapping Panel (if dialogue mode active) */}
-            {isDialogueMode && (
-              <div className="mb-4">
-                <MultiSpeakerPanel
-                  speakers={detectedSpeakers}
-                  mappings={speakerMappings}
-                  onMappingChange={handleSpeakerMappingChange}
-                  onInsertTemplate={(tmpl) => setText(tmpl)}
-                  defaultVoice={selectedVoiceObj}
-                />
-              </div>
-            )}
 
             {/* Main Textarea */}
             <textarea
               ref={textareaRef}
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder={isDialogueMode ? "Speaker 1: Hello!\nSpeaker 2: Hi there, how are you? [pause 1s]" : "Write or paste your script here... Use [pause 2s] for custom pauses."}
+              placeholder="Write or paste your script here..."
               className="w-full flex-grow text-gray-800 dark:text-gray-100 text-xl lg:text-2xl resize-none placeholder-gray-400 dark:placeholder-gray-600 bg-transparent focus:outline-none min-h-[350px] leading-relaxed"
               required
             />
@@ -465,14 +324,6 @@ export default function TTSForm() {
                   onChange={(e) => setPitch(parseInt(e.target.value))}
                   className="w-full h-1.5 bg-gray-200 dark:bg-gray-800 rounded-lg appearance-none cursor-pointer accent-black dark:accent-white"
                 />
-              </div>
-
-              {/* Quick Settings Tips */}
-              <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#161616] border border-gray-100 dark:border-gray-800 text-xs text-gray-500 dark:text-gray-400 flex flex-col gap-1.5 mt-2">
-                <span className="font-semibold text-gray-700 dark:text-gray-300">Pro Tips:</span>
-                <span>• Insert <code className="bg-gray-200 dark:bg-gray-800 px-1 rounded">[pause 2s]</code> anywhere in your text for custom pauses.</span>
-                <span>• Try the <strong className="text-gray-700 dark:text-gray-200">Kokoro AI</strong> tab in the voice selector for hyper-realistic local voices.</span>
-                <span>• History is stored directly in <strong className="text-gray-700 dark:text-gray-200">IndexedDB</strong> without size limits.</span>
               </div>
             </div>
           ) : (

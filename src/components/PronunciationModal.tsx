@@ -1,12 +1,48 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Plus, Trash2, BookA, Check, Sparkles } from 'lucide-react';
-import { PronunciationRule, getPronunciations, savePronunciations } from '@/lib/storage';
+import { X, Plus, Trash2, BookA } from 'lucide-react';
+
+export interface PronunciationRule {
+  id: string;
+  word: string;
+  replacement: string;
+  enabled: boolean;
+}
 
 interface PronunciationModalProps {
   isOpen: boolean;
   onClose: () => void;
+}
+
+export function getLocalPronunciations(): PronunciationRule[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const saved = localStorage.getItem('tts_pronunciations');
+    if (saved) return JSON.parse(saved);
+  } catch (e) {}
+  return [
+    { id: '1', word: 'GIF', replacement: 'jif', enabled: true },
+    { id: '2', word: 'SQL', replacement: 'sequel', enabled: true },
+  ];
+}
+
+export function saveLocalPronunciations(rules: PronunciationRule[]) {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem('tts_pronunciations', JSON.stringify(rules));
+  } catch (e) {}
+}
+
+export function applyPronunciations(text: string, rules: PronunciationRule[]): string {
+  let result = text;
+  for (const rule of rules) {
+    if (!rule.enabled || !rule.word.trim()) continue;
+    const escaped = rule.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escaped}\\b`, 'gi');
+    result = result.replace(regex, rule.replacement);
+  }
+  return result;
 }
 
 export default function PronunciationModal({ isOpen, onClose }: PronunciationModalProps) {
@@ -16,7 +52,7 @@ export default function PronunciationModal({ isOpen, onClose }: PronunciationMod
 
   useEffect(() => {
     if (isOpen) {
-      getPronunciations().then(setRules);
+      setRules(getLocalPronunciations());
     }
   }, [isOpen]);
 
@@ -35,7 +71,7 @@ export default function PronunciationModal({ isOpen, onClose }: PronunciationMod
 
     const updated = [...rules, newRule];
     setRules(updated);
-    savePronunciations(updated);
+    saveLocalPronunciations(updated);
     setNewWord('');
     setNewReplacement('');
   };
@@ -43,13 +79,13 @@ export default function PronunciationModal({ isOpen, onClose }: PronunciationMod
   const handleToggle = (id: string) => {
     const updated = rules.map(r => r.id === id ? { ...r, enabled: !r.enabled } : r);
     setRules(updated);
-    savePronunciations(updated);
+    saveLocalPronunciations(updated);
   };
 
   const handleDelete = (id: string) => {
     const updated = rules.filter(r => r.id !== id);
     setRules(updated);
-    savePronunciations(updated);
+    saveLocalPronunciations(updated);
   };
 
   return (
